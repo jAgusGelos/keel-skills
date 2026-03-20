@@ -1,0 +1,23 @@
+{
+  "name": "keel-skills",
+  "metadata": {
+    "description": "35+ development workflow skills for spec-first planning, multi-expert reasoning, code review, PR automation, TDD, performance audits, observability, and content creation."
+  },
+  "owner": {
+    "name": "Keel AI"
+  },
+  "plugins": [
+    {
+      "name": "keel-skills",
+      "description": "35+ development workflow skills: spec-first planning, multi-expert reasoning, code review, PR automation, TDD, performance audits, and observability.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Keel AI"
+      },
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/jAgusGelos/keel-skills",
+      "tags": ["skills", "workflow", "code-review", "planning", "tdd", "observability", "devops", "content"]
+    }
+  ]
+}

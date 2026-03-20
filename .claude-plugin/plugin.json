@@ -1,0 +1,11 @@
+{
+  "name": "keel-skills",
+  "version": "1.0.0",
+  "description": "35+ development workflow skills: spec-first planning, multi-expert reasoning, code review, PR automation, TDD, performance audits, and observability.",
+  "author": {
+    "name": "Keel AI"
+  },
+  "homepage": "https://github.com/jAgusGelos/keel-skills",
+  "repository": "https://github.com/jAgusGelos/keel-skills",
+  "skills": "./skills"
+}

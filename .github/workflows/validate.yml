@@ -1,0 +1,50 @@
+name: Validate Plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate dependencies
+        run: ./scripts/validate-deps.sh
+
+      - name: Check SKILL.md frontmatter
+        run: |
+          errors=0
+          for skill_md in skills/*/SKILL.md; do
+            skill_name=$(basename "$(dirname "$skill_md")")
+            # Check for required frontmatter fields
+            if ! head -20 "$skill_md" | grep -q "^name:"; then
+              echo "ERROR: $skill_name missing 'name' in frontmatter"
+              errors=$((errors + 1))
+            fi
+            if ! head -20 "$skill_md" | grep -q "^description:"; then
+              echo "ERROR: $skill_name missing 'description' in frontmatter"
+              errors=$((errors + 1))
+            fi
+            if ! head -30 "$skill_md" | grep -q "^version:"; then
+              echo "ERROR: $skill_name missing 'version' in frontmatter"
+              errors=$((errors + 1))
+            fi
+            if ! head -30 "$skill_md" | grep -q "^category:"; then
+              echo "ERROR: $skill_name missing 'category' in frontmatter"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ $errors -gt 0 ]; then
+            echo "FAILED: $errors frontmatter errors"
+            exit 1
+          fi
+          echo "All SKILL.md files have required frontmatter."
+
+      - name: Count skills
+        run: |
+          count=$(ls -d skills/*/ | wc -l)
+          echo "Plugin contains $count skills."
