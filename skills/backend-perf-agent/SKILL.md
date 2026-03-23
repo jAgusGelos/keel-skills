@@ -76,9 +76,11 @@ Before dispatching agents, understand the project:
    sequelize.config.*    → Sequelize
    supabase/config.toml  → Supabase (PostgreSQL + Edge Functions)
    docker-compose.yml    → DB services (postgres, redis, mongo, mysql)
-   .env / .env.example   → DATABASE_URL, REDIS_URL, connection strings
+   .env.example           → DATABASE_URL, REDIS_URL, connection strings (pattern only)
    migrations/           → Migration files (reveal schema history)
    ```
+
+   **Security:** NEVER read `.env`, `.env.local`, `.env.production`, or any env file containing real credentials. Only read `.env.example` or `.env.sample`. When reporting findings about connection strings or credentials, show the pattern and location, not the actual value.
 
 3. **Identify DB engine and version** from connection strings or config:
    - PostgreSQL, MySQL/MariaDB, MongoDB, SQLite, PlanetScale, Neon, Supabase
@@ -532,8 +534,12 @@ If Codex is NOT available, launch a fifth Claude subagent (Agent tool, general-p
 
 **If Codex is available**, run:
 
+**Security: NEVER interpolate dynamic content (stack summaries, file contents) into shell command strings.**
+Always use single-quoted heredocs:
+
 ```bash
-codex -a never exec "You are a backend and database performance auditor performing an independent deep investigation.
+cat <<'PROMPT_EOF' | codex -a never exec -
+You are a backend and database performance auditor performing an independent deep investigation.
 
 Analyze this codebase for ALL backend and database performance bottlenecks. Be thorough and critical.
 
@@ -547,11 +553,12 @@ Focus areas:
 7. Resource management — memory leaks, missing graceful shutdown, no rate limiting
 8. Architecture — synchronous work that should be queued, missing background jobs, blocking event loop
 
-Stack: {STACK_SUMMARY}
+Stack: <write stack summary here>
 
-Read package.json, ORM schema, migration files, API handlers, services, and config files.
+Read ORM schema, migration files, API handlers, services, and config files.
 For each finding report: Impact (CRITICAL/HIGH/MEDIUM/LOW), File:Line, Problem, Fix, Estimated Impact.
-End with a priority-ranked top 10 list of fixes by expected impact at scale."
+End with a priority-ranked top 10 list of fixes by expected impact at scale.
+PROMPT_EOF
 ```
 
 **Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a fifth Claude subagent with the same prompt.

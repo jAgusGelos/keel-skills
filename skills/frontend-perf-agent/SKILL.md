@@ -499,8 +499,12 @@ If Codex is NOT available, launch a fifth Claude subagent (Agent tool, general-p
 
 **If Codex is available**, run:
 
+**Security: NEVER interpolate dynamic content (stack summaries, file contents) into shell command strings.**
+Always use single-quoted heredocs:
+
 ```bash
-codex -a never exec "You are a frontend performance auditor performing an independent deep investigation.
+cat <<'PROMPT_EOF' | codex -a never exec -
+You are a frontend performance auditor performing an independent deep investigation.
 
 Analyze this codebase for ALL performance bottlenecks. Be thorough and critical.
 
@@ -513,23 +517,28 @@ Focus areas:
 6. Hidden costs — dev-only code in prod, unnecessary polyfills, runtime CSS-in-JS overhead
 7. Network waste — missing compression, no HTTP/2 push, unoptimized API payloads
 
-Stack: {STACK_SUMMARY}
+Stack: <write stack summary here>
 
 Read package.json, config files, layout files, key pages, and components.
 For each finding report: Impact (HIGH/MEDIUM/LOW), File:Line, Problem, Fix, Estimated Savings.
-End with a priority-ranked top 10 list of fixes by expected impact."
+End with a priority-ranked top 10 list of fixes by expected impact.
+PROMPT_EOF
 ```
 
-If the diff/context is too large:
+If the context is too large, write it to a temp file first:
 ```bash
-# Write context to temp file
-cat package.json > /tmp/perf-context.txt
-echo "---" >> /tmp/perf-context.txt
-cat next.config.* >> /tmp/perf-context.txt 2>/dev/null
-echo "---" >> /tmp/perf-context.txt
-find src -name "*.tsx" -o -name "*.ts" | head -50 >> /tmp/perf-context.txt
+CTX_FILE=$(mktemp /tmp/perf-context-XXXXXX.txt)
+trap "rm -f $CTX_FILE" EXIT
+cat package.json > "$CTX_FILE"
+echo "---" >> "$CTX_FILE"
+cat next.config.* >> "$CTX_FILE" 2>/dev/null
+echo "---" >> "$CTX_FILE"
+find src -name "*.tsx" -o -name "*.ts" | head -50 >> "$CTX_FILE"
 
-codex -a never exec "Read /tmp/perf-context.txt and the source files listed. Perform a deep frontend performance audit..."
+cat <<PROMPT_EOF | codex -a never exec -
+Read $CTX_FILE and the source files listed. Perform a deep frontend performance audit.
+For each finding report: Impact (HIGH/MEDIUM/LOW), File:Line, Problem, Fix, Estimated Savings.
+PROMPT_EOF
 ```
 
 **Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a fifth Claude subagent with the same prompt.

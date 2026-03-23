@@ -80,20 +80,23 @@ command -v codex >/dev/null 2>&1
 ```
 
 **If Codex is available**, use Bash to run:
+
+**Security: NEVER interpolate dynamic content directly into shell command strings.** Always use
+a single-quoted heredoc to prevent shell expansion:
 ```bash
-codex -a never exec "<refined-prompt>"
+cat <<'PROMPT_EOF' | codex -a never exec -
+<refined-prompt goes here — shell metacharacters are safe inside single-quoted heredoc>
+PROMPT_EOF
 ```
 
 The `-a never` flag ensures Codex runs fully autonomously without approval prompts.
 **Important:** `-a` is a global flag — it must come before the `exec` subcommand, not after.
-If the prompt is long, write it to a temp file and pipe it:
-```bash
-echo '<refined-prompt>' | codex -a never exec -
-```
 
-For prompts that need file context, you can also use:
+To override the model:
 ```bash
-codex -a never exec -m o4-mini "<refined-prompt>"
+cat <<'PROMPT_EOF' | codex -a never exec -m o4-mini -
+<refined-prompt>
+PROMPT_EOF
 ```
 
 **If Codex is NOT available**, launch a second Claude subagent (Agent tool, general-purpose) with the same refined prompt. Label outputs as "Claude-A" and "Claude-B" instead of "Claude" and "Codex".
@@ -117,7 +120,12 @@ Once both results are back:
 Send the synthesized result back to Codex for validation:
 
 ```bash
-codex -a never exec "Review the following output for correctness, completeness, and potential issues. Flag anything that looks wrong or could be improved. Be critical.\n\n<synthesized-result>"
+cat <<'PROMPT_EOF' | codex -a never exec -
+Review the following output for correctness, completeness, and potential issues.
+Flag anything that looks wrong or could be improved. Be critical.
+
+<synthesized-result>
+PROMPT_EOF
 ```
 
 Analyze Codex's review:

@@ -246,8 +246,18 @@ First, check if Codex CLI is available: `command -v codex >/dev/null 2>&1`
 
 **If Codex is available**, use Bash to run:
 
+**Security: NEVER interpolate diff content or file lists directly into shell command strings.**
+Always write the diff to a temp file and use a single-quoted heredoc for the prompt:
+
 ```bash
-codex -a never exec "You are a code reviewer performing an independent audit. Review these changes for correctness, completeness, and potential issues. Be critical — flag anything that looks wrong, fragile, or could cause bugs in production.
+DIFF_FILE=$(mktemp /tmp/review-diff-XXXXXX.txt)
+trap "rm -f $DIFF_FILE" EXIT
+git diff <range> > "$DIFF_FILE"
+
+cat <<'PROMPT_EOF' | codex -a never exec -
+You are a code reviewer performing an independent audit. Review the changes in
+the file referenced below for correctness, completeness, and potential issues.
+Be critical — flag anything that looks wrong, fragile, or could cause bugs in production.
 
 Focus on:
 1. Logic errors and edge cases the author may have missed
@@ -258,24 +268,14 @@ Focus on:
 6. Input validation gaps at trust boundaries
 7. Concurrency issues and data consistency
 
-Changed files: {FILE_LIST}
-
-Diff:
-{DIFF}
+Read the diff from: <DIFF_FILE_PATH>
 
 For each finding report: Severity (CRITICAL/HIGH/MEDIUM/LOW), File:Line, Issue, Fix suggestion.
-End with a summary count."
+End with a summary count.
+PROMPT_EOF
 ```
 
-If the diff is too long for a single command, write it to a temp file first:
-```bash
-git diff <range> > /tmp/review-diff.txt
-codex -a never exec "$(cat <<'PROMPT'
-[review prompt above with reference to /tmp/review-diff.txt]
-Read /tmp/review-diff.txt and review the changes...
-PROMPT
-)"
-```
+Replace `<DIFF_FILE_PATH>` with the actual path returned by `mktemp`.
 
 **If Codex is NOT available**, launch a third Claude subagent (Agent tool, general-purpose) with the same prompt. Label its findings as `[External Agent]` instead of `[Codex Agent]`.
 

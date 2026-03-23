@@ -80,6 +80,13 @@ a named feature without existing context.
    - If ticket number only (e.g., "PROJ-421"), ask for a short slug or auto-generate:
      `PROJ-421-oauth-payments`
    - If no ticket, use: `feature-YYYYMMDD-{slug}`
+
+**Security: Validate the feature ID before using it as a path:**
+- Strip any characters other than `[a-zA-Z0-9._-]`
+- Reject IDs containing `..`, `/`, or `\`
+- Truncate to 100 characters max
+- Verify the resolved path is within the project directory
+
 2. Check if `.features/{id}/` already exists.
    - Status `active`: offer to RESUME instead.
    - Status `completed`/`archived`: ask if this is a new iteration.

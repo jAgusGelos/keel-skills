@@ -85,8 +85,13 @@ Return: structured findings with file paths and evidence.
 
 **Codex CLI:**
 
+**Security: NEVER interpolate dynamic content into shell command strings.** Always use single-quoted heredocs:
 ```bash
-codex -a never exec "Explore this codebase for context relevant to: {feature_request}. Find relevant files, architectural patterns, dependencies, and conventions. Return structured findings with file paths."
+cat <<'PROMPT_EOF' | codex -a never exec -
+Explore this codebase for context relevant to: {feature_request}.
+Find relevant files, architectural patterns, dependencies, and conventions.
+Return structured findings with file paths.
+PROMPT_EOF
 ```
 
 ### Step 2: Cross-Validated Synthesis
@@ -148,7 +153,11 @@ Recommend one with rationale.
 **Codex CLI:**
 
 ```bash
-codex -a never exec "Given this codebase context: {synthesis_summary}. Propose architecture for: {decision_topic}. Consider 3+ options with pros/cons/risks. Recommend one."
+cat <<'PROMPT_EOF' | codex -a never exec -
+Given this codebase context: {synthesis_summary}.
+Propose architecture for: {decision_topic}.
+Consider 3+ options with pros/cons/risks. Recommend one.
+PROMPT_EOF
 ```
 
 **Then synthesize:**
@@ -186,7 +195,12 @@ Conformance Criteria.
 **Codex CLI** independently generates a plan from the same inputs:
 
 ```bash
-codex -a never exec "Generate a detailed implementation plan for: {feature_request}. Context: {synthesis + architecture_decisions}. Include: summary, architecture decisions, dependencies, risks, milestones, boundaries, conformance criteria. Use markdown."
+cat <<'PROMPT_EOF' | codex -a never exec -
+Generate a detailed implementation plan for: {feature_request}.
+Context: {synthesis + architecture_decisions}.
+Include: summary, architecture decisions, dependencies, risks, milestones,
+boundaries, conformance criteria. Use markdown.
+PROMPT_EOF
 ```
 
 **Synthesize the two plans:**
@@ -212,7 +226,11 @@ Same dual-engine pattern:
 **Codex CLI** independently generates a task breakdown:
 
 ```bash
-codex -a never exec "Generate an implementation checklist for: {feature_request} based on this plan: {plan_summary}. Tasks should be atomic, testable, with verification criteria. Group by milestones."
+cat <<'PROMPT_EOF' | codex -a never exec -
+Generate an implementation checklist for: {feature_request} based on this plan:
+{plan_summary}. Tasks should be atomic, testable, with verification criteria.
+Group by milestones.
+PROMPT_EOF
 ```
 
 **Synthesize:**

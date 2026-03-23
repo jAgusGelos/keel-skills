@@ -233,8 +233,13 @@ If Codex is NOT available, launch a second Claude subagent (Agent tool, general-
 
 **If Codex is available**, run:
 
+**Security: NEVER interpolate dynamic content (context, journeys) into shell command strings.**
+Always use single-quoted heredocs:
+
 ```bash
-codex -a never exec "You are a Cypress E2E testing expert. Given the following app context and user journeys, write production-quality Cypress tests.
+cat <<'PROMPT_EOF' | codex -a never exec -
+You are a Cypress E2E testing expert. Given the following app context and user journeys,
+write production-quality Cypress tests.
 
 Focus on:
 1. Testing real user outcomes, not DOM structure
@@ -245,12 +250,13 @@ Focus on:
 6. Edge cases: empty states, concurrent actions, slow networks
 
 App Context:
-{CONTEXT}
+<paste context here>
 
 User Journeys:
-{JOURNEYS}
+<paste journeys here>
 
-Write complete, runnable test files. Include custom commands and fixtures."
+Write complete, runnable test files. Include custom commands and fixtures.
+PROMPT_EOF
 ```
 
 **Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a second Claude subagent with the same prompt.
@@ -276,7 +282,8 @@ Once both engines return:
 Send the synthesized tests back to Codex for validation (skip if Codex is unavailable — use a Claude subagent with the same prompt):
 
 ```bash
-codex -a never exec "Review these Cypress E2E tests for quality. Check:
+cat <<'PROMPT_EOF' | codex -a never exec -
+Review these Cypress E2E tests for quality. Check:
 1. Are tests truly independent? (no shared state between tests)
 2. Are selectors resilient? (data-cy, not CSS classes)
 3. Are waits explicit? (network aliases, not cy.wait(N))
@@ -288,7 +295,8 @@ codex -a never exec "Review these Cypress E2E tests for quality. Check:
 Flag issues and suggest fixes.
 
 Tests:
-{SYNTHESIZED_TESTS}"
+<paste synthesized tests here>
+PROMPT_EOF
 ```
 
 Incorporate valid feedback. Skip stylistic suggestions.

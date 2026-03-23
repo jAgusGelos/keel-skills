@@ -137,8 +137,12 @@ If Codex is NOT available, skip to the **Fallback** below.
 
 **How to invoke (when Codex is available):**
 
+**Security: NEVER interpolate dynamic content (solutions, critiques) into shell command strings.**
+Always use a single-quoted heredoc to prevent shell expansion:
+
 ```bash
-echo 'Review the following solution and the critique of it. Independently identify any
+cat <<'PROMPT_EOF' | codex -a never exec -
+Review the following solution and the critique of it. Independently identify any
 issues, bugs, edge cases, or improvements that the critique may have MISSED. Focus on
 correctness, robustness, and subtle errors. Do NOT repeat issues already identified —
 only add NEW findings.
@@ -152,7 +156,8 @@ only add NEW findings.
 Respond with:
 1. NEW issues not in the critique (if any)
 2. Disagreements with the assessment (if any)
-3. Validation of findings you agree with (brief)' | codex -a never exec -
+3. Validation of findings you agree with (brief)
+PROMPT_EOF
 ```
 
 **Important:** `-a` is a global flag — it must come before `exec`, not after.

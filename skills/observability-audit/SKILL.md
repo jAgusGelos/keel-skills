@@ -98,6 +98,8 @@ Before dispatching agents, understand the observability posture:
    Infra:      docker-compose.yml (Grafana/Prometheus/Jaeger/Loki), k8s configs, CI/CD
    ```
 
+   **Security:** NEVER read `.env`, `.env.local`, `.env.production`, or any env file containing real credentials. Only read `.env.example` or `.env.sample`. When reporting findings about connection strings or credentials, show the pattern and location, not the actual value. When agents report findings about sensitive data in logs, redact actual secret values in the report. Show pattern and location, not the value.
+
 3. **Detect execution model**: request/response service, SPA/SSR, workers/cron/queues, event-driven, CLI/batch
 
 4. **Scan for observability artifacts**: centralized logger, metrics setup, tracing init, health endpoints, alert definitions, dashboards
