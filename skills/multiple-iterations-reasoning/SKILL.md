@@ -132,7 +132,10 @@ Evaluate the current solution honestly:
 Send the current solution and Claude's critical analysis to Codex CLI for independent
 critique. Codex reviews with fresh eyes, catching issues Claude may have missed.
 
-**How to invoke:**
+**Pre-check:** Verify Codex is available: `command -v codex >/dev/null 2>&1`
+If Codex is NOT available, skip to the **Fallback** below.
+
+**How to invoke (when Codex is available):**
 
 ```bash
 echo 'Review the following solution and the critique of it. Independently identify any

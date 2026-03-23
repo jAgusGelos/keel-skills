@@ -527,7 +527,10 @@ For each finding:
 
 ### Agent 5: Codex External Validation (Codex CLI)
 
-Run Codex for an independent external audit:
+**Pre-check:** Verify Codex is available: `command -v codex >/dev/null 2>&1`
+If Codex is NOT available, launch a fifth Claude subagent (Agent tool, general-purpose) with the same prompt below.
+
+**If Codex is available**, run:
 
 ```bash
 codex -a never exec "You are a backend and database performance auditor performing an independent deep investigation.
@@ -551,7 +554,7 @@ For each finding report: Impact (CRITICAL/HIGH/MEDIUM/LOW), File:Line, Problem, 
 End with a priority-ranked top 10 list of fixes by expected impact at scale."
 ```
 
-**Fallback:** If Codex is unavailable, launch a fifth Claude subagent with the same prompt.
+**Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a fifth Claude subagent with the same prompt.
 
 ## Step 2: Merge, Deduplicate & Cross-Reference
 

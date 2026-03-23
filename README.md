@@ -203,6 +203,41 @@ All 24 skills ship as a single monolith plugin. This is intentional — Claude C
 
 ---
 
+## Ecosystem & compatibility
+
+### Optimized for React/Next.js/Node.js
+
+Several skills include checklist items, file path conventions, and examples tuned for the **React / Next.js / Node.js** ecosystem. This is where the skills were battle-tested. They will still work in other stacks, but you may see framework-specific items that don't apply to your project.
+
+Skills with React/Next.js/Node.js focus:
+- `review-changes` — checklist includes React hooks, Server Components, and Next.js patterns
+- `frontend-perf-agent` — rendering agent checks React-specific patterns (memo, useCallback, Context)
+- `backend-perf-agent` — ORM checks focus on Prisma, TypeORM, Sequelize
+- `e2e-agent` — generates Cypress tests with npm/Node.js conventions
+- `style-guide` — audits CSS/Tailwind/React component patterns
+
+All other skills (planning, reasoning, persistence, DevOps) are **fully stack-agnostic**.
+
+### Optional dependencies
+
+Some skills leverage external tools when available. They auto-detect availability and fall back gracefully:
+
+| Dependency | Used by | Fallback |
+|---|---|---|
+| [OpenAI Codex CLI](https://github.com/openai/codex) | `cc-cc-powerful-iterations`, `review-changes`, `spec-first-cc-cc`, `multiple-iterations-reasoning`, `frontend-perf-agent`, `backend-perf-agent`, `e2e-agent` | Second Claude subagent |
+| [`gh` CLI](https://cli.github.com/) | `create-pr`, `fix-pr-comments`, `review-pr-comments`, `pr-learning` | Required for GitHub repos |
+| [`glab` CLI](https://gitlab.com/gitlab-org/cli) | `create-pr`, `fix-pr-comments`, `review-pr-comments` | Required for GitLab repos |
+
+### .workspace/ directory
+
+Several skills write scratchpad files to `.workspace/` in your project root (context checkpoints, iteration logs, etc.). Add it to your `.gitignore` to avoid committing these files:
+
+```bash
+echo '.workspace/' >> .gitignore
+```
+
+---
+
 ## Contributing
 
 ```bash

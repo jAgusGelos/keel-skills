@@ -228,7 +228,10 @@ For each journey, produce:
 
 ### Codex CLI: Independent Test Validator
 
-Run Codex to independently write or validate the same tests:
+**Pre-check:** Verify Codex is available: `command -v codex >/dev/null 2>&1`
+If Codex is NOT available, launch a second Claude subagent (Agent tool, general-purpose) with the same prompt below.
+
+**If Codex is available**, run:
 
 ```bash
 codex -a never exec "You are a Cypress E2E testing expert. Given the following app context and user journeys, write production-quality Cypress tests.
@@ -250,7 +253,7 @@ User Journeys:
 Write complete, runnable test files. Include custom commands and fixtures."
 ```
 
-**Fallback:** If Codex is unavailable, launch a second Claude subagent with the same prompt.
+**Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a second Claude subagent with the same prompt.
 
 ## Step 3: Synthesis
 
@@ -270,7 +273,7 @@ Once both engines return:
 
 ## Step 4: Codex Review
 
-Send the synthesized tests back to Codex for validation:
+Send the synthesized tests back to Codex for validation (skip if Codex is unavailable — use a Claude subagent with the same prompt):
 
 ```bash
 codex -a never exec "Review these Cypress E2E tests for quality. Check:

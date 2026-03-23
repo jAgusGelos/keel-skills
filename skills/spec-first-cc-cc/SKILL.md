@@ -268,10 +268,16 @@ When this skill is invoked by `/simple-feature-workflow` or directly, always sho
 
 ---
 
-## CODEX FALLBACK
+## CODEX DETECTION & FALLBACK
 
-If Codex CLI is unavailable or errors out:
+**Before the first Codex invocation**, check availability:
+```bash
+command -v codex >/dev/null 2>&1
+```
 
+**If Codex is available:** use it for all Codex steps as described above.
+
+**If Codex is NOT available:**
 - Fall back to running **two independent Claude subagents** instead.
 - Label outputs as "Claude-A" and "Claude-B" instead of "Claude" and "Codex".
 - The rest of the workflow remains identical.

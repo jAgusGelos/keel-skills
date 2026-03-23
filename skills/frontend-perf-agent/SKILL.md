@@ -494,7 +494,10 @@ For each finding:
 
 ### Agent 5: Codex External Validation (Codex CLI)
 
-Run Codex to independently review the entire codebase for performance issues:
+**Pre-check:** Verify Codex is available: `command -v codex >/dev/null 2>&1`
+If Codex is NOT available, launch a fifth Claude subagent (Agent tool, general-purpose) with the same prompt below.
+
+**If Codex is available**, run:
 
 ```bash
 codex -a never exec "You are a frontend performance auditor performing an independent deep investigation.
@@ -529,7 +532,7 @@ find src -name "*.tsx" -o -name "*.ts" | head -50 >> /tmp/perf-context.txt
 codex -a never exec "Read /tmp/perf-context.txt and the source files listed. Perform a deep frontend performance audit..."
 ```
 
-**Fallback:** If Codex is unavailable, launch a fifth Claude subagent with the same prompt.
+**Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a fifth Claude subagent with the same prompt.
 
 ## Step 2: Merge, Deduplicate & Cross-Reference
 

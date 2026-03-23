@@ -66,13 +66,24 @@ User triggers review
 
 Determine what to review:
 
-1. Run `git diff --staged` and `git diff` to capture all current changes
-2. If no changes exist, check recent commits with `git log --oneline -10` and ask the user
-   which range to review (e.g., "last 3 commits", "since branch diverged from main")
-3. Once the scope is clear, collect the full diff:
+1. **Detect the default branch** (do NOT hardcode `main`):
+   ```bash
+   DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+   if [ -z "$DEFAULT_BRANCH" ]; then
+     if git show-ref --verify --quiet refs/remotes/origin/main 2>/dev/null; then
+       DEFAULT_BRANCH="main"
+     elif git show-ref --verify --quiet refs/remotes/origin/master 2>/dev/null; then
+       DEFAULT_BRANCH="master"
+     fi
+   fi
+   ```
+2. Run `git diff --staged` and `git diff` to capture all current changes
+3. If no changes exist, check recent commits with `git log --oneline -10` and ask the user
+   which range to review (e.g., "last 3 commits", "since branch diverged from $DEFAULT_BRANCH")
+4. Once the scope is clear, collect the full diff:
    - For uncommitted changes: `git diff` + `git diff --staged`
    - For commit range: `git diff <base>..<head>`
-   - For branch review: `git diff main...HEAD`
+   - For branch review: `git diff $DEFAULT_BRANCH...HEAD`
 4. Also list all changed files with `git diff --name-only <range>` to give agents file context
 5. Read surrounding code for changed files — agents need full file context, not just diffs
 
@@ -231,7 +242,9 @@ End with a summary count by severity.
 
 ### Agent 3: External Validation (Codex CLI)
 
-Use Bash to run Codex CLI for an independent external review:
+First, check if Codex CLI is available: `command -v codex >/dev/null 2>&1`
+
+**If Codex is available**, use Bash to run:
 
 ```bash
 codex -a never exec "You are a code reviewer performing an independent audit. Review these changes for correctness, completeness, and potential issues. Be critical — flag anything that looks wrong, fragile, or could cause bugs in production.
@@ -264,8 +277,7 @@ PROMPT
 )"
 ```
 
-**Fallback:** If Codex CLI is unavailable or errors out, launch a third Claude subagent instead
-with the same prompt. Log that fallback was used.
+**If Codex is NOT available**, launch a third Claude subagent (Agent tool, general-purpose) with the same prompt. Label its findings as `[External Agent]` instead of `[Codex Agent]`.
 
 ## Step 2: Merge & Deduplicate
 

@@ -72,8 +72,14 @@ Launch both engines with the same refined prompt. Run them in parallel to save t
 Use the Agent tool (general-purpose subagent) with the refined prompt. Tell it to produce
 a complete, actionable result.
 
-**Codex CLI:**
-Use Bash to run:
+**Codex CLI (auto-detected):**
+
+First, check if Codex CLI is available:
+```bash
+command -v codex >/dev/null 2>&1
+```
+
+**If Codex is available**, use Bash to run:
 ```bash
 codex -a never exec "<refined-prompt>"
 ```
@@ -89,6 +95,8 @@ For prompts that need file context, you can also use:
 ```bash
 codex -a never exec -m o4-mini "<refined-prompt>"
 ```
+
+**If Codex is NOT available**, launch a second Claude subagent (Agent tool, general-purpose) with the same refined prompt. Label outputs as "Claude-A" and "Claude-B" instead of "Claude" and "Codex".
 
 ### Step 3: Analysis & Synthesis
 
@@ -134,7 +142,7 @@ To override, use `-m <model>` flag (e.g., `-m o4-mini`, `-m o3`).
 ## When to Skip Steps
 
 - If the task is trivial, you can skip the Codex review (Step 4) and go straight to presentation
-- If Codex CLI is unavailable or errors out, fall back to using two Claude subagents instead
+- If Codex CLI is unavailable (detected via `command -v codex`), use two Claude subagents instead
 - If the user says "quick iteration", do Steps 1-3 only
 
 ## Context Management
