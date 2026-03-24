@@ -2,315 +2,520 @@
 name: spec-first-cc-cc
 description: |
   Dual-engine specification workflow that combines spec-first planning with cc-cc cross-validation.
+  Runs the full spec-first pipeline (capture, research, three-experts, plan, todo) with dual-engine
+  adversarial review at generation steps — Codex audits what Claude drafts, instead of co-generating.
   Every planning step runs through both Claude and Codex in parallel, producing a cross-validated
   plan.md and todo.md that benefits from two independent perspectives.
   Use this skill when the user says "spec first cc-cc", "dual engine planning", "plan with codex",
   "cross-validated spec", "cc-cc planning", "dual spec", or when `/simple-feature-workflow`
   Phase 2 selects the dual-engine option.
-version: 1.0.0
-category: development
-depends: [three-experts, stress-test, feature-context, cc-cc-powerful-iterations]
 ---
 
-# spec-first-cc-cc
+# Spec First CC-CC — Dual-Engine Planning with Adversarial Review
 
-Dual-engine specification workflow that combines spec-first planning with cc-cc cross-validation.
-Every planning step runs through both Claude and Codex in parallel, producing a cross-validated
-plan.md and todo.md that benefits from two independent perspectives.
+Build a shared mental model of a feature before writing code. Produce two artifacts:
+`plan.md` (the spec) and `todo.md` (the execution checklist). Code comes after, never before.
 
-Use this skill when the user says "spec first cc-cc", "dual engine planning", "plan with codex",
-"cross-validated spec", "cc-cc planning", "dual spec", or when `/simple-feature-workflow`
-Phase 2 selects the dual-engine option.
+This skill extends `spec-first` by adding a second engine (Codex CLI) as an **adversarial reviewer**
+at plan and todo generation steps. The second engine audits — it does not co-author. This preserves
+the internal coherence of each artifact while catching blind spots a single engine would miss.
+
+## Why This Exists
+
+`spec-first` produces excellent plans through a disciplined uncertainty-reduction pipeline.
+The dual-engine addition targets the specific steps where a second perspective adds value:
+**auditing generated artifacts against checklists, anti-patterns, and templates**. It does NOT
+replace structured reasoning (three-experts) with generic parallel generation, because
+role-differentiated adversarial deliberation is categorically better than two generic engines
+producing monologues.
+
+**Core principle:** Draft/Audit, not Co-Author. Merging two independently generated plans
+destroys the internal coherence (assumption chains, AD-ID traceability, task dependency ordering)
+that makes a plan useful.
+
+## The Cycle
+
+```
+User Feature Request
+     |
+     v
+[1] Capture and Confirm (scope, boundaries, user approval)
+     |
+     v
+[2] Parallel Research (3 focused threads: Codebase, Dependencies, Memory Bank)
+     |
+     v
+[3] Synthesize and Classify Gaps (Known / Inferred / Unknown)
+     |
+     v
+[4] Clarify Critical Unknowns (up to 3 questions, STOP and wait)
+     |
+     v
+[5] Three Experts Reasoning (via three-experts skill)
+     |
+     v
+[6] Claude DRAFTS plan.md → Codex AUDITS → Claude REVISES
+     |
+     v
+[7] Claude DRAFTS todo.md → Codex AUDITS → Claude REVISES
+     |
+     v
+[8] Plan Checkpoint
+```
 
 ---
 
-## WHY THIS EXISTS
+## Step-by-Step
 
-`spec-first` produces excellent plans but from a single engine's perspective. `cc-cc` provides
-cross-validation but isn't specialized for planning. This skill runs the full spec-first
-pipeline with dual-engine validation at every critical decision point — research synthesis,
-architecture decisions, and plan generation — so the final spec has been stress-tested by
-two independent AI engines before a single line of code is written.
+### Step 1: Capture and Confirm the Feature Request
 
----
+Restate the user's request in one tight paragraph with explicit scope boundaries:
 
-## THE CYCLE
+- Intended outcome
+- In-scope behavior
+- Out-of-scope assumptions (if known)
 
+Present this restatement to the user and ask them to confirm before proceeding.
+
+Why: framing prevents plan drift. Confirming early avoids wasted research on a
+misunderstood request.
+
+### Step 2: Parallel Research
+
+Launch multiple Agent subagents simultaneously to gather context. If subagents are
+unavailable, perform the same research sequentially using Glob, Grep, and Read directly.
+
+**Thread A — Codebase Structure:**
+
+- Use Glob to map directory layout and find relevant files
+- Use Grep to locate features, routes, services, models related to the request
+- Identify architectural entry points and coupling hotspots
+- Record concrete file paths for every finding
+
+**Thread B — Dependencies & Configuration:**
+
+- Use Read on package.json, pyproject.toml, go.mod, or equivalent
+- Check for relevant config files (tsconfig, docker-compose, CI configs)
+- Identify what's available vs. what needs adding
+
+**Thread C — Memory Bank Context:**
+
+- Use Glob to check for `memory-bank/` directory (also check `docs/`, `.memory/`, `context/`)
+- If found, use Read on (in priority order):
+  - `memory-bank/project-brief.md`
+  - `memory-bank/tech-context.md`
+  - `memory-bank/system-patterns.md`
+  - `memory-bank/active-context.md`
+  - `memory-bank/core-flows.md`
+- If files are absent, explicitly report missing context docs
+
+Why: architecture decisions need evidence, not guesses. The memory bank prevents
+proposing solutions that contradict established project decisions.
+
+### Step 3: Synthesize and Classify Gaps
+
+Create a short synthesis:
+
+- What is known with confidence (cite file paths)
+- What is inferred from code patterns (cite evidence)
+- What is unknown
+
+Classify each unknown:
+
+- **Critical** — blocks correctness or safety, cannot proceed without it
+- **Important** — affects architecture or sequencing, but can use reasonable defaults
+- **Nice-to-have** — can proceed without
+
+Why: separates true blockers from things resolved during implementation.
+
+### Step 4: Clarify or Continue
+
+If any Critical unknown exists:
+
+- Ask up to 3 targeted, decision-oriented questions
+- Make questions specific and multiple-choice when possible
+- Bad: "What do you want?" Good: "Should this support batch operations or single-item only?"
+- Then STOP and wait for answers
+
+Once answers arrive, reclassify remaining unknowns. If all Critical gaps are resolved,
+continue to Step 5. If not, inform the user which gaps remain.
+
+If no Critical unknowns exist, proceed with explicit assumptions documented.
+
+Why: prevents speculative design built on false assumptions.
+
+### Step 5: Three Experts Reasoning (via `three-experts` skill)
+
+**Invoke the `three-experts` skill** to reason about architecture decisions from multiple
+perspectives. The skill will:
+
+1. Use the repository context gathered in Step 2 (no need to re-explore)
+2. Select 3 domain-specific experts based on the problem type
+3. Run structured deliberation rounds with challenges, sub-point resolution, and dropouts
+4. Conduct a formal voting round
+5. Produce a consensus recommendation with tradeoffs and implementation approach
+
+**Adaptation for spec-first-cc-cc:** When invoking three-experts, pass the following context:
+
+- The confirmed feature request from Step 1
+- The synthesis and gap classification from Steps 3-4
+- The resolved context from Step 2 (file paths, tech stack, patterns)
+
+The three-experts output feeds directly into the Architecture Decisions section of plan.md.
+**Safety and correctness constraints always take priority** over convenience or speed.
+
+Why: avoids one-dimensional architecture choices and surfaces tradeoffs early. Using the
+full three-experts skill ensures structured deliberation with evidence-based challenges
+instead of a simplified inline reasoning pass. Role-differentiated adversarial deliberation
+is categorically better than two generic engines producing parallel proposals.
+
+### Step 6: Generate plan.md (Draft/Audit/Revise)
+
+Before writing, check if plan.md already exists in the target location. If it does,
+ask the user whether to overwrite or create a new version (e.g., plan-v2.md).
+
+**Phase A — Claude Drafts:**
+
+Write plan.md to `.workspace/features/<feature-name>/plan.md` (NEVER to project root) using this template:
+
+```markdown
+# Plan: [Feature Name]
+
+> Generated via spec-first-cc-cc workflow on [date]
+
+## Executive Summary
+
+- **Problem:** [what needs solving]
+- **Desired outcome:** [what success looks like]
+- **Scope:** [what's included]
+- **Non-goals:** [what's explicitly excluded]
+- **Success criteria:** [how we know it's done]
+
+## Commands
+
+- **Build:** `[command]`
+- **Test:** `[command, including single-file run]`
+- **Lint:** `[command]`
+- **Dev server:** `[command]`
+
+## Architecture Decisions
+
+### AD-1: [Title]
+
+- **Context:** [why this decision is needed]
+- **Options considered:** [alternatives]
+- **Chosen approach:** [decision]
+- **Rationale:** [why, referencing expert perspectives]
+- **Evidence:** [file paths and patterns that informed this]
+- **Tradeoffs:** [what we're giving up]
+- **Consequences:** [what this commits us to]
+
+### AD-2: [Title]
+
+[Same structure]
+
+## Dependencies
+
+### New Dependencies
+
+| Package/Module | Purpose      | Risk Level     |
+| -------------- | ------------ | -------------- |
+| [name]         | [why needed] | [low/med/high] |
+
+### Existing Dependencies Leveraged
+
+- [dependency] — used for [purpose]
+
+### Internal Module Dependencies
+
+- [module A] depends on [module B] — [why ordering matters]
+
+## Non-Functional Requirements
+
+- **Auth/Security:** [requirements or N/A]
+- **Performance:** [SLOs, latency, throughput expectations]
+- **Migration/Backward Compatibility:** [breaking changes, data migration needs]
+- **Observability:** [logging, monitoring, alerting needs]
+
+## Three-Tier Boundaries
+
+### Always
+
+- [Rules agents must always follow, e.g., run tests before commits]
+- [Follow naming conventions from existing codebase]
+
+### Ask First
+
+- [Changes requiring human approval, e.g., DB schema changes]
+- [API contract changes, new external dependencies]
+
+### Never
+
+- [Hard prohibitions, e.g., commit secrets or API keys]
+- [Delete production data, skip required tests, bypass auth]
+
+## Risks & Mitigations
+
+| Risk                  | Likelihood     | Impact         | Mitigation            |
+| --------------------- | -------------- | -------------- | --------------------- |
+| [what could go wrong] | [low/med/high] | [low/med/high] | [prevention/handling] |
+
+## Strategy
+
+### Phase 1: [Name — smallest shippable slice]
+
+[What gets built first, why it comes first, exit criteria]
+
+### Phase 2: [Name]
+
+[What comes next, dependencies on Phase 1, exit criteria]
+
+## Open Questions
+
+- [ ] [Question] — Why it matters: [context]. Default if unanswered: [fallback]
+
+## Conformance Criteria
+
+Testable assertions that validate the plan was followed correctly:
+
+- [ ] [e.g., "All API endpoints return consistent error format defined in types/errors.ts"]
+- [ ] [e.g., "No direct DB queries outside the repository layer"]
+- [ ] [e.g., "Every new route has integration test coverage"]
+- [ ] [e.g., "Feature flags gate all user-visible changes"]
 ```
-Confirmed Feature Request (from caller or user)
-     |
-     v
-[1] Parallel Research (Claude subagent + Codex)
-     |
-     v
-[2] Synthesis & Gap Classification (cross-validated)
-     |
-     v
-[3] Clarify Critical Unknowns (if any)
-     |
-     v
-[4] Architecture Decisions (Claude + Codex propose independently, then merge)
-     |
-     v
-[5] Generate plan.md (dual-engine, synthesized)
-     |
-     v
-[6] Generate todo.md (dual-engine, synthesized)
-     |
-     v
-[7] Plan Checkpoint
-```
 
----
+**Phase B — Codex Audits:**
 
-## STEP-BY-STEP
+Send the drafted plan.md to Codex for adversarial review:
 
-### Step 1: Parallel Research
-
-Launch two independent research passes simultaneously:
-
-**Claude Subagent (via Agent tool):**
-
-```
-Explore the codebase for context relevant to: {feature_request}
-
-Research:
-- Directory layout, relevant files, architectural entry points
-- Dependencies, config files, tech stack
-- memory-bank/ context (project-brief, tech-context, system-patterns, active-context)
-- Existing patterns and conventions that affect this feature
-
-Return: structured findings with file paths and evidence.
-```
-
-**Codex CLI:**
-
-**Security: NEVER interpolate dynamic content into shell command strings.** Always use single-quoted heredocs:
 ```bash
-cat <<'PROMPT_EOF' | codex -a never exec -
-Explore this codebase for context relevant to: {feature_request}.
-Find relevant files, architectural patterns, dependencies, and conventions.
-Return structured findings with file paths.
-PROMPT_EOF
+codex -a never exec "You are auditing a plan.md for a software feature. Review it against this checklist and report ALL failures:
+
+TEMPLATE COMPLETENESS:
+- [ ] Has all sections: Summary, Commands, Architecture Decisions, Dependencies, NFRs, Boundaries, Risks, Strategy, Open Questions, Conformance
+- [ ] Every AD has: Context, Options, Chosen approach, Rationale, Evidence (file paths), Tradeoffs, Consequences
+- [ ] AD-IDs are sequential and referenced consistently
+
+QUALITY:
+- [ ] Conformance criteria are testable assertions, not vague goals
+- [ ] Three-Tier Boundaries have project-specific rules, not generic placeholders
+- [ ] Risks have concrete mitigations, not 'handle appropriately'
+- [ ] Strategy phases have exit criteria
+- [ ] Dependencies include risk levels with justification
+- [ ] No vague specs — every statement is concrete and falsifiable
+
+ANTI-PATTERNS:
+- [ ] No over-specifying implementation (spec defines WHAT/WHY, not HOW)
+- [ ] No missing boundaries (Never/Always rules are explicit)
+- [ ] No ignored existing patterns (checks codebase conventions)
+- [ ] No hidden assumptions (all assumptions are documented)
+
+PLAN:
+$(cat .workspace/features/<feature-name>/plan.md)
+
+Report each failure with: section, issue, suggested fix."
 ```
 
-### Step 2: Cross-Validated Synthesis
+**Phase C — Claude Revises:**
 
-Once both research results are back:
+Incorporate all valid audit findings into plan.md. For each finding:
+- If it identifies a real gap: fix it
+- If it suggests an improvement: incorporate it
+- If it's a false positive: note why and skip it
 
-1. **Compare findings** — note where both engines found the same patterns (high confidence)
-   and where they diverged (investigate further).
-2. **Merge into a unified synthesis:**
-   - Known with confidence (cited by both engines)
-   - Known with moderate confidence (cited by one, plausible)
-   - Unknown (neither engine found evidence)
-3. **Classify unknowns** as Critical / Important / Nice-to-have.
-4. **Show the user** the cross-validated synthesis with agreement markers:
+Show the user the audit summary and the revised plan.
 
-   ```
-   CROSS-VALIDATED RESEARCH SYNTHESIS
+### Step 7: Generate todo.md (Draft/Audit/Revise)
 
-   HIGH CONFIDENCE (both engines agree):
-   - {finding_1} — files: {paths}
-   - {finding_2} — files: {paths}
+Before writing, check if todo.md already exists. Same overwrite rules as plan.md.
 
-   MODERATE CONFIDENCE (one engine found):
-   - {finding_3} — source: {Claude/Codex} — files: {paths}
+**Phase A — Claude Drafts:**
 
-   UNKNOWNS:
-   - [CRITICAL] {unknown_1}
-   - [IMPORTANT] {unknown_2}
-   ```
+Write todo.md to `.workspace/features/<feature-name>/todo.md` (NEVER to project root).
+Every task should be atomic and independently testable. Order by dependency. Reference
+AD-IDs from plan.md to maintain traceability.
 
-### Step 3: Clarify Critical Unknowns
+```markdown
+# TODO: [Feature Name]
 
-If any Critical unknowns exist:
+> Tracks implementation. See plan.md for architecture context.
 
-- Ask up to 3 targeted, decision-oriented questions (multiple-choice when possible).
-- STOP and wait for answers.
-- Reclassify after answers arrive.
+## Milestone 1: [Name — matches Phase from plan.md]
 
-If no Critical unknowns, proceed with documented assumptions.
+- [ ] Task 1.1: [clear, actionable description] `[refs: AD-1]`
+  - [ ] [subtask — single concrete action]
+  - [ ] [subtask]
+  - [ ] Verify: [how to confirm this task is done — test, manual check, or other]
+- [ ] Task 1.2: [description] `[refs: AD-2]`
+  - [ ] [subtask]
+  - [ ] [subtask]
+  - [ ] Verify: [verification criteria]
 
-### Step 4: Dual-Engine Architecture Decisions
+## Milestone 2: [Name]
 
-For each major architecture decision:
+- [ ] Task 2.1: [description]
+  - [ ] [subtask]
+  - [ ] [subtask]
+  - [ ] Verify: [verification criteria]
 
-**Run both engines independently on the same question:**
+## Hardening & Launch
 
-**Claude Subagent:**
+- [ ] Final regression sweep
+  - [ ] Critical path test pass
+  - [ ] Performance/security checks
+- [ ] Documentation updates
+- [ ] Rollout/rollback readiness
 
+## Verification
+
+- [ ] All tests pass
+- [ ] Conformance criteria from plan.md satisfied
+- [ ] Manual smoke test of [key user flow]
 ```
-Given this context:
-{synthesis_from_step_2}
-{resolved_unknowns}
 
-Propose architecture for: {decision_topic}
-Consider at least 3 options. For each: describe approach, pros, cons, risk level.
-Recommend one with rationale.
-```
-
-**Codex CLI:**
+**Phase B — Codex Audits:**
 
 ```bash
-cat <<'PROMPT_EOF' | codex -a never exec -
-Given this codebase context: {synthesis_summary}.
-Propose architecture for: {decision_topic}.
-Consider 3+ options with pros/cons/risks. Recommend one.
-PROMPT_EOF
+codex -a never exec "You are auditing a todo.md implementation checklist. Review against these criteria and report ALL failures:
+
+TASK QUALITY:
+- [ ] Every task is atomic (produces a single testable artifact)
+- [ ] Every task has a Verify subtask with concrete verification criteria
+- [ ] No task has more than 5 subtasks (split if so)
+- [ ] No 'refactor' tasks without specifying what changes and why
+- [ ] Subtasks are single actions: 'create file X', 'add method Y', 'write test for Z'
+
+TRACEABILITY:
+- [ ] Every task references an AD-ID from plan.md
+- [ ] Milestones match phases from plan.md Strategy section
+- [ ] Task ordering respects dependency chains
+
+COMPLETENESS:
+- [ ] Has Hardening & Launch section
+- [ ] Has Verification section referencing conformance criteria
+- [ ] Covers all phases from plan.md Strategy
+- [ ] No gaps between plan.md scope and todo.md coverage
+
+TODO:
+$(cat .workspace/features/<feature-name>/todo.md)
+
+Report each failure with: task/section, issue, suggested fix."
 ```
 
-**Then synthesize:**
+**Phase C — Claude Revises:**
 
-1. Compare recommendations — if both agree, high confidence.
-2. If they diverge, reason about which is more correct given the evidence.
-3. Note where Codex caught something Claude missed and vice versa.
+Incorporate valid audit findings. Same rules as plan.md revision.
 
-**Show the user each architecture decision:**
+**Rules for good tasks:**
 
-```
-ARCHITECTURE DECISION: AD-{N} — {title}
+- Each task produces a testable artifact (a function, endpoint, component)
+- Subtasks are single actions: "create file X", "add method Y", "write test for Z"
+- Every task includes a **Verify** subtask with verification criteria
+- Include appropriate verification per task (unit test, integration test, manual check,
+  or other validation — not everything requires a unit test)
+- If a task has more than 5 subtasks, split it into multiple tasks
+- Never write "refactor" without specifying what changes and why
+- Reference AD-IDs from plan.md so decisions are traceable to tasks
 
-CLAUDE RECOMMENDS: {option_A} — {rationale}
-CODEX RECOMMENDS:  {option_B} — {rationale}
+### Step 8: Plan Checkpoint
 
-AGREEMENT: {agree/diverge}
+After generating plan.md and todo.md, create a plan checkpoint so the user can optionally
+clear context before implementation.
 
-SYNTHESIZED DECISION: {chosen_option}
-RATIONALE: {why, incorporating best of both perspectives}
-TRADEOFFS: {what we're giving up}
+**What to do:**
 
-Confirm or override?
-```
+1. **Enter plan mode** — Use the `EnterPlanMode` tool to signal the start of a plan checkpoint.
 
-Wait for user approval on each decision.
+2. **Write the plan file** — Include:
+   - **Feature request summary** (from Step 1)
+   - **Paths to generated artifacts** — full paths to plan.md and todo.md
+   - **Key architecture decisions** — summary of AD-IDs and their chosen approaches (from Steps 5-6)
+   - **Resolved vs. open questions** — which Critical/Important unknowns were answered and which remain
+   - **Top risks** — from the Risks & Mitigations table
+   - **Three-Tier Boundaries** — Always/Ask First/Never rules (needed for every implementation task)
+   - **Commands** — build, test, lint, dev server (needed for agent self-verification)
+   - **Codex audit summary** — key findings from the adversarial review and how they were resolved
+   - **Approval status** — whether the user has approved the plan (pending/approved). After
+     `/clear`, this prevents accidental implementation without explicit approval
 
-### Step 5: Generate plan.md (Dual-Engine)
+   The plan file must give enough context that a fresh session can read plan.md, todo.md,
+   and the plan file to begin implementation without any prior conversation history.
 
-**Claude Subagent** generates plan.md using the spec-first template with all sections:
-Executive Summary, Commands, Architecture Decisions (AD-IDs), Dependencies, NFRs,
-Three-Tier Boundaries, Risks & Mitigations, Strategy (phased milestones), Open Questions,
-Conformance Criteria.
+3. **Exit plan mode** — Use the `ExitPlanMode` tool to signal the plan is ready for review.
 
-**Codex CLI** independently generates a plan from the same inputs:
+4. **Suggest adversarial validation** — Consider running `/stress-test` to adversarially
+   validate this plan before implementation. This is optional but recommended for plans
+   with unverified assumptions, external dependencies, or performance claims.
 
-```bash
-cat <<'PROMPT_EOF' | codex -a never exec -
-Generate a detailed implementation plan for: {feature_request}.
-Context: {synthesis + architecture_decisions}.
-Include: summary, architecture decisions, dependencies, risks, milestones,
-boundaries, conformance criteria. Use markdown.
-PROMPT_EOF
-```
+5. **Inform the user** — This is the ideal point to `/clear` context before starting
+   implementation. After clearing, the implementation session should read the plan file
+   first, then follow the "Using the Spec During Implementation" guidance below.
 
-**Synthesize the two plans:**
-
-- Take the strongest sections from each.
-- Resolve any conflicts in milestone ordering or scope.
-- Ensure AD-IDs are consistent.
-- Merge risk tables (union of risks from both engines).
-
-Write the final synthesized `plan.md` to project root.
-
-### Step 6: Generate todo.md (Dual-Engine)
-
-Same dual-engine pattern:
-
-**Claude Subagent** generates todo.md from plan.md following spec-first task rules:
-
-- Milestones matching plan.md phases
-- Atomic, testable tasks with Verify criteria
-- AD-ID references for traceability
-- Hardening & Launch section
-
-**Codex CLI** independently generates a task breakdown:
-
-```bash
-cat <<'PROMPT_EOF' | codex -a never exec -
-Generate an implementation checklist for: {feature_request} based on this plan:
-{plan_summary}. Tasks should be atomic, testable, with verification criteria.
-Group by milestones.
-PROMPT_EOF
-```
-
-**Synthesize:**
-
-- Merge task lists, deduplicate.
-- Take the more granular subtask breakdown where they differ.
-- Ensure every task has a Verify criterion.
-- Maintain AD-ID references from plan.md.
-
-Write the final synthesized `todo.md` to project root.
-
-### Step 7: Plan Checkpoint
-
-1. **Enter plan mode** — Use `EnterPlanMode`.
-2. **Write the plan file** including:
-   - Feature request summary
-   - Paths to plan.md and todo.md
-   - Architecture decisions with engine agreement status
-   - Cross-validation confidence notes
-   - Top risks
-   - Three-Tier Boundaries
-   - Commands
-   - Approval status
-3. **Exit plan mode** — Use `ExitPlanMode`.
-4. **Present to the user** — Summary of key decisions, risks, open questions.
-5. **Offer `/stress-test`** — Optional adversarial validation before implementation.
+**This is a checkpoint, not a gate.** Users who do not want to clear context can proceed
+directly to implementation approval without interruption.
 
 ---
 
-## OUTPUT FORMAT
+## Output Format
 
-When this skill is invoked by `/simple-feature-workflow` or directly, always show:
+When this skill completes, show:
 
 ```
-┌─────────────────────────────────────────────────┐
-│  SPEC-FIRST CC-CC — DUAL ENGINE PLANNING        │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  ENGINE AGREEMENT SUMMARY:                      │
-│  Research:     {agree%} agreement               │
-│  Architecture: {N}/{total} decisions aligned    │
-│  Plan:         {agree/diverge} on structure     │
-│  Tasks:        {N} tasks (merged from both)     │
-│                                                 │
-│  ARTIFACTS:                                     │
-│  - plan.md  ({path})                            │
-│  - todo.md  ({path})                            │
-│                                                 │
-│  CONFIDENCE: {high/medium/low}                  │
-│                                                 │
-└─────────────────────────────────────────────────┘
+SPEC-FIRST CC-CC — DUAL ENGINE PLANNING (Draft/Audit)
+
+  CODEX AUDIT RESULTS:
+  plan.md:  {N} findings ({X} fixed, {Y} accepted, {Z} rejected)
+  todo.md:  {N} findings ({X} fixed, {Y} accepted, {Z} rejected)
+
+  ARTIFACTS:
+  - plan.md  ({path})
+  - todo.md  ({path})
+
+  CONFIDENCE: {high/medium/low}
 ```
 
 ---
 
-## CODEX DETECTION & FALLBACK
+## After Generating
 
-**Before the first Codex invocation**, check availability:
-```bash
-command -v codex >/dev/null 2>&1
-```
+Present both files with a brief summary of:
 
-**If Codex is available:** use it for all Codex steps as described above.
+- Key architecture decisions and their rationale
+- Codex audit findings and how they were resolved
+- Top risks identified
+- Open questions that need human input
 
-**If Codex is NOT available:**
-- Fall back to running **two independent Claude subagents** instead.
-- Label outputs as "Claude-A" and "Claude-B" instead of "Claude" and "Codex".
-- The rest of the workflow remains identical.
+Then wait. Do not proceed to implementation until the user explicitly approves the plan
+or says to start coding. Remind the user that this is the ideal moment to `/clear` context
+if the conversation has grown long — the plan checkpoint from Step 8 ensures all context
+is preserved in the plan file, plan.md, and todo.md.
 
----
+**Living artifacts:** plan.md and todo.md are not frozen after creation. Update them
+when discoveries emerge during implementation. If a decision changes or a risk
+materializes, revise the relevant section and note the change date. For major rewrites,
+ask the user whether to version the old file (e.g., plan-v1.md) before overwriting.
 
-## CONTEXT MANAGEMENT
+## Using the Spec During Implementation
 
-- **Scratchpad:** `.workspace/ctx/spec-first-cc-cc/`
-- **Checkpoint frequency:** After Steps 2, 4, 5, 6
-- **Subagent delegation:** Research (Step 1), Architecture (Step 4), Plan gen (Step 5), Task gen (Step 6)
+This section is guidance for the **implementation phase after this skill completes**.
+The spec-first-cc-cc skill itself only produces plan.md and todo.md — it does not write code.
 
----
+**If context was cleared:** Start by reading the plan file from Step 8 to recover artifact
+paths and key decisions, then read plan.md and todo.md before beginning any task.
 
-## MANDATORY: Keep todo.md Updated During Implementation
+Beware the "curse of instructions" — research shows model adherence drops as the number
+of simultaneous requirements grows. Do not dump the entire plan.md into a single
+implementation prompt.
+
+When implementing tasks from todo.md:
+
+- Feed only the **relevant plan.md section(s)** + the **specific task and its subtasks**
+- Each task prompt should be self-contained with just enough context to execute
+- Always include **Three-Tier Boundaries** — those apply to every task
+- Always include **Commands** — so the agent can verify its own work
+- Reference applicable **Conformance Criteria** for the current task
+
+### MANDATORY: Keep todo.md Updated During Implementation
 
 **As you complete each task, update todo.md immediately** — check off completed items
 (`- [x]`), add notes about deviations, and append new tasks discovered during implementation.
@@ -319,14 +524,68 @@ split it. If review found new issues, add them. Never leave the todo.md stale �
 always reflect the current state of progress so that any session (current or future) can
 read it and know exactly where things stand.
 
----
+## Anti-Patterns
 
-## ANTI-PATTERNS — DO NOT
+Mistakes that undermine this approach — avoid these:
 
-- Run only one engine and skip cross-validation (defeats the purpose)
-- Auto-merge without showing the user where engines diverged
-- Skip the architecture decision approval step
-- Generate plan.md without AD-IDs and traceability
-- Write code — this skill produces plan.md and todo.md ONLY
-- Skip the plan checkpoint (Step 7)
-- Leave todo.md unchecked after completing tasks — always update as you go
+1. **Co-generating instead of draft/audit** — Never have both engines generate plans
+   independently and merge. Merging destroys internal coherence. One engine drafts,
+   the other audits.
+2. **Vague specs** — "Build something nice" is not a spec. Every section needs concrete,
+   falsifiable statements.
+3. **Monolithic prompts** — Dumping the entire spec into one implementation prompt
+   overwhelms the model and degrades output quality.
+4. **Skipping human review** — Never start coding from a plan the user hasn't approved.
+   The plan exists to build shared understanding.
+5. **Missing boundaries** — A plan without Never/Always rules leaves agents guessing
+   what's safe. Make constraints explicit.
+6. **Over-specifying implementation** — The spec defines WHAT and WHY, not HOW. Leave
+   implementation details to the coding phase unless architecturally significant.
+7. **Ignoring existing patterns** — Always check what conventions the codebase already
+   follows. Proposing new patterns when working ones exist creates inconsistency.
+8. **Skipping the plan checkpoint** — Always create the checkpoint (Step 8).
+   The `/clear` afterward is optional, but creating the checkpoint is not.
+9. **Replacing three-experts with dual-engine** — Architecture decisions need
+   role-differentiated adversarial deliberation, not two generic engines producing
+   parallel proposals. Never skip three-experts for architecture.
+10. **Auto-accepting all audit findings** — Review each Codex finding critically.
+    Some will be false positives. The goal is to catch blind spots, not to blindly
+    incorporate every suggestion.
+
+## Codex Fallback
+
+If Codex CLI is unavailable or errors out:
+
+- Fall back to running a **second Claude subagent** as the auditor instead.
+- Label outputs as "Claude-Drafter" and "Claude-Auditor" instead of "Claude" and "Codex".
+- The auditor subagent must receive the same checklist prompts — do not weaken the audit.
+- The rest of the workflow remains identical.
+
+## Context Management
+
+This skill follows the context-management protocol.
+
+- **Scratchpad:** `.workspace/ctx/spec-first-cc-cc/`
+- **Checkpoint frequency:** After Steps 2 (research), 5 (three-experts), 6 (plan.md), 7 (todo.md)
+- **Subagent delegation:** Parallel research threads (Step 2), three-experts deliberation (Step 5), Codex audit (Steps 6-7)
+
+## Quality Checklist
+
+Before delivering plan.md and todo.md, verify:
+
+- [ ] Research used Glob, Grep, Read to gather real evidence (not guesses)
+- [ ] Every unknown classified as Critical / Important / Nice-to-have
+- [ ] Three Experts reasoning documented with file path citations
+- [ ] Safety/correctness constraints prioritized over convenience in decisions
+- [ ] plan.md has all sections: Summary, Commands, Architecture, Dependencies, NFRs,
+      Boundaries, Risks, Strategy, Open Questions, Conformance
+- [ ] Architecture decisions have AD-IDs and todo.md tasks reference them
+- [ ] todo.md has milestones, tasks with Verify criteria, Hardening, Verification
+- [ ] Three-Tier Boundaries populated with project-specific rules
+- [ ] Conformance criteria are testable assertions, not vague goals
+- [ ] Checked for existing plan.md/todo.md before writing
+- [ ] Codex audit completed for both plan.md and todo.md
+- [ ] All valid audit findings incorporated into final artifacts
+- [ ] Plan presented for user approval before any implementation
+- [ ] Plan checkpoint written via EnterPlanMode/ExitPlanMode with artifact paths and key context
+- [ ] No implementation code was written — only plan.md and todo.md
