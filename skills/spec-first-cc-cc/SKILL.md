@@ -9,6 +9,9 @@ description: |
   Use this skill when the user says "spec first cc-cc", "dual engine planning", "plan with codex",
   "cross-validated spec", "cc-cc planning", "dual spec", or when `/simple-feature-workflow`
   Phase 2 selects the dual-engine option.
+version: 1.0.0
+category: development
+depends: [spec-first, cc-cc-powerful-iterations, three-experts]
 ---
 
 # Spec First CC-CC — Dual-Engine Planning with Adversarial Review

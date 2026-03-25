@@ -10,6 +10,9 @@ description: |
   "build coding guidelines", "bootstrap review rules", "what do reviewers care about",
   "reverse-engineer coding style", "audit review quality", "what does this team enforce",
   "unwritten rules", "review patterns", "coding standards from PRs", "infer team conventions".
+version: 1.0.0
+category: development
+depends: [cc-cc-powerful-iterations, pr-learning, review-changes]
 ---
 
 # Repo Standards Mining
