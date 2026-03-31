@@ -12,6 +12,8 @@ description: |
   "three experts", "expert deliberation", "multi-perspective", "debate this", "architecture
   review", "think through this from multiple angles", "expert panel", "deliberate on", or
   asks for a decision with tradeoffs analyzed from different viewpoints.
+version: 2.0.0
+category: reasoning
 ---
 
 # Three Experts

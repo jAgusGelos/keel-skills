@@ -13,6 +13,8 @@ description: |
   "pattern documentation", "generate patterns", "coding standards from code", "investigate codebase",
   "what are the conventions", "document best practices", "codebase conventions", "engineering guidelines",
   "generate rules", "codebase rules", "domain rules".
+version: 1.0.0
+category: development
 ---
 
 # Codebase Best Practices
