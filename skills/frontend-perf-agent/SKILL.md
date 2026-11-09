@@ -10,7 +10,7 @@ description: |
   "perf review", or wants a comprehensive performance investigation of their frontend code.
   Also trigger when the user mentions "page speed", "loading time", "jank", "layout shift",
   "long tasks", or "time to interactive".
-version: 1.0.0
+version: 1.1.0
 category: development
 depends: []
 ---
@@ -86,7 +86,13 @@ Before dispatching agents, understand the project:
    - `lighthouse` in devDependencies?
    - `@next/bundle-analyzer` or `webpack-bundle-analyzer` configured?
    - `web-vitals` library integrated?
-   - Any performance monitoring (Sentry, Datadog, Vercel Analytics)?
+   - Any performance monitoring / RUM (Sentry Performance, Datadog RUM, Vercel Speed Insights, Cloudflare Web Analytics, New Relic Browser)?
+
+   **If no RUM is present, the final report MUST include a recommendation to add one.** Field data
+   from real users is the only reliable source of CWV truth — lab numbers drift from what users
+   actually experience. Recommend one of: Vercel Speed Insights (simplest for Next.js on Vercel),
+   Sentry Performance (if Sentry already in use), Datadog RUM (enterprise), Cloudflare Web Analytics
+   (privacy-first, free), or the `web-vitals` library + custom endpoint.
 
 Save all context — every agent receives the same stack profile.
 
@@ -110,7 +116,19 @@ don't guess. For every finding, provide file:line, the problem, the fix, and est
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (16 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+
+## Your Investigation Checklist (17 points)
 
 ### Bundle Size
 1. **Barrel file bloat** — Check for `index.ts` files that re-export everything from a directory.
@@ -181,6 +199,15 @@ don't guess. For every finding, provide file:line, the problem, the fix, and est
 16. **Environment-specific bloat** — Dev-only code, debug logging, or large error handling
     that shouldn't ship to production. Check for `process.env.NODE_ENV` guards missing.
 
+### Compression
+17. **Compression missing or suboptimal** — Response headers for HTML/JS/CSS lack
+    `content-encoding: br` (Brotli) or `gzip`. Brotli typically saves 15–25% more than gzip on
+    text assets. Check `next.config.js` (`compress: true` — enabled by default but can be disabled),
+    `vercel.json` headers, Nginx/Apache/Cloudflare config, or the hosting provider defaults.
+    - Fix: Enable Brotli at the CDN/server level; compression level 4–6 is a good JS/CSS default
+      (level 11 is build-time only, too slow for dynamic responses).
+    - Red flags: static assets served with no `content-encoding`, or gzip where Brotli is available.
+
 ## Files to Read
 - package.json (dependencies + scripts)
 - next.config.* / vite.config.* / webpack.config.*
@@ -196,6 +223,12 @@ For each finding:
 - **Problem**: what's wrong and why it hurts performance
 - **Fix**: concrete code change with before/after
 - **Estimated Savings**: KB saved, seconds saved, or qualitative improvement
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -211,7 +244,19 @@ Focus on problems that cause jank, unnecessary work, or slow interactions.
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (14 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+
+## Your Investigation Checklist (16 points)
 
 ### Unnecessary Re-renders
 1. **Missing React.memo on expensive components** — Components that receive stable props but
@@ -274,6 +319,24 @@ Focus on problems that cause jank, unnecessary work, or slow interactions.
 14. **Key instability in lists** — Using array index as key when items can be reordered,
     filtered, or inserted. Causes React to unnecessarily destroy and recreate DOM nodes.
 
+### Modern Rendering Techniques & Leaks
+15. **Missing `content-visibility: auto` for long offscreen sections** — Long article bodies,
+    card grids, or infinite lists without `content-visibility: auto` + `contain-intrinsic-size: <w> <h>`.
+    The browser paints and lays out offscreen subtrees unnecessarily, wasting main-thread time.
+    Flag `.prose`, `.article-body`, `.feed`, long product grids, dashboard sections that sit below
+    the initial viewport.
+    - Fix: Add `content-visibility: auto` with an `contain-intrinsic-size` hint (approximate rendered
+      size) to avoid scrollbar jumps. Combine with `contain: layout paint style` on repeatable cards.
+
+16. **Memory leaks from uncleaned effects** — `useEffect` (or equivalent) that attaches
+    `addEventListener`, `setInterval` / `setTimeout` loops, WebSocket subscriptions, `ResizeObserver`,
+    `IntersectionObserver`, `MutationObserver`, or custom event emitters **without returning a cleanup
+    function**. In long-lived SPAs (dashboards, single-page PWAs, apps rarely refreshed) these
+    accumulate across mounts/route changes and progressively degrade input latency and memory.
+    - Fix: Return a cleanup function from every effect that subscribes to external sources.
+      Search patterns: `addEventListener(` / `setInterval(` / `new .*Observer(` inside effects that
+      don't have a `return () => ...` cleanup.
+
 ## Files to Read
 - Components with the most imports (likely complex/central)
 - Page-level components (src/app/**/page.*, src/pages/*.*)
@@ -288,6 +351,12 @@ For each finding:
 - **Problem**: what's wrong and the rendering cost
 - **Fix**: concrete code change with before/after
 - **Estimated Improvement**: re-renders eliminated, frames saved, or qualitative
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -308,7 +377,19 @@ These are the metrics Google uses for ranking and that users feel most.
 - INP (Interaction to Next Paint): GOOD < 200ms, POOR > 500ms
 - CLS (Cumulative Layout Shift): GOOD < 0.1, POOR > 0.25
 
-## Your Investigation Checklist (14 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+
+## Your Investigation Checklist (16 points)
 
 ### LCP Blockers (Loading — target < 2.5s)
 1. **LCP element not prioritized** — Find the likely LCP element for key pages (hero image,
@@ -322,6 +403,9 @@ These are the metrics Google uses for ranking and that users feel most.
    - Properly sized (not 4000px served at 400px)?
    - On a CDN with proper cache headers?
    - Using `fetchpriority="high"`?
+   - **Broader `fetchpriority` use:** the attribute also applies to `<script>` and `<link>`.
+     Set `fetchpriority="low"` on non-critical scripts (analytics, chat widgets, A/B test bootstraps)
+     to free bandwidth for the LCP resource; `fetchpriority="high"` on the critical preload.
 
 3. **Server response time (TTFB)** — Check for:
    - Heavy middleware processing
@@ -346,9 +430,14 @@ These are the metrics Google uses for ranking and that users feel most.
 7. **Expensive event handlers** — onClick, onChange, onScroll handlers that do too much
    synchronous work. Should defer expensive work with:
    - `requestAnimationFrame` for visual updates
-   - `setTimeout(fn, 0)` or `queueMicrotask` for non-visual work
-   - Web Workers for heavy computation
-   - `startTransition` for React 18+ non-urgent updates
+   - `scheduler.yield()` (Chromium 129+) to cede the main thread mid-task without losing priority —
+     preferred modern replacement for `setTimeout(fn, 0)` / `queueMicrotask` hacks
+   - `scheduler.postTask()` with explicit priorities (`background` / `user-visible` / `user-blocking`)
+     for coordinated task ordering
+   - `requestIdleCallback` for non-urgent background work (analytics flushes, cache warmups)
+   - `setTimeout(fn, 0)` / `queueMicrotask` — legacy fallback if the Scheduling APIs aren't available
+   - Web Workers (or `OffscreenCanvas` for canvas work) for heavy computation off the main thread
+   - `startTransition` / `useDeferredValue` for React 18+ non-urgent updates
 
 8. **Input delay from hydration** — Page appears interactive but clicks don't work until
    hydration completes. Check for large client-side bundles that block hydration.
@@ -375,6 +464,32 @@ These are the metrics Google uses for ranking and that users feel most.
 14. **Animations triggering layout** — Entry animations that change `height`, `width`,
     or `margin` instead of using `transform: scale/translate` and `opacity`.
 
+### Navigation & Metric Attribution
+15. **bfcache blockers** — Patterns that prevent back/forward cache restoration, killing
+    instant history navigation (one of the largest perceived-speed wins for returning users):
+    - `window.addEventListener('unload', ...)` or `beforeunload` handlers (especially used as
+      analytics beacons — use `visibilitychange` + `sendBeacon` instead)
+    - `Cache-Control: no-store` on the HTML document response (the single most common cause)
+    - Never-closed `IndexedDB` connections or open WebSocket channels with no visibility handling
+    - Very large in-memory state that exceeds bfcache quotas
+    - Fix: swap `unload`/`beforeunload` for `pagehide`/`visibilitychange`, close IDB transactions
+      on `pagehide`, avoid `no-store` on the document (use `private, max-age=0, must-revalidate`
+      instead), and audit with Chrome DevTools → Application → Back/forward cache.
+
+16. **LCP sub-part breakdown** — When flagging LCP issues, identify which of the 4 phases dominates
+    before prescribing a fix; different phase → different fix:
+    - (a) **TTFB** — server/CDN latency, cold functions, slow middleware. Fix at the edge/server.
+    - (b) **Resource load delay** — time between TTFB and when the LCP resource request starts.
+      Usually caused by late discovery (image in CSS `background-image`, script-injected `<img>`,
+      lazy hydration), missing `<link rel="preload">`, or bad discovery order. Fix with preload /
+      `fetchpriority="high"` and move resource into plain HTML.
+    - (c) **Resource load duration** — how long the LCP resource takes to transfer. Fix with
+      compression, modern format (WebP/AVIF), smaller dimensions, or CDN closer to user.
+    - (d) **Element render delay** — time after the resource loads before it paints. Usually
+      hydration blocking, render-blocking CSS, or JavaScript that prevents first paint.
+    - Tooling: DevTools → Performance panel shows the LCP phase breakdown; `web-vitals`
+      library exposes `LCPAttribution` (via `onLCP` with `reportAllChanges`) with phase fields.
+
 ## Files to Read
 - Layout files (app/layout.*, pages/_app.*, pages/_document.*)
 - Key page files (home, landing, dashboard — highest traffic pages)
@@ -391,6 +506,12 @@ For each finding:
 - **Problem**: what's wrong and how it affects the metric
 - **Fix**: concrete code change
 - **Expected Improvement**: estimated metric improvement (e.g., "LCP -500ms", "CLS -0.05")
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -406,7 +527,19 @@ Scan actual files in public/, static/, and asset import patterns in source code.
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (12 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+
+## Your Investigation Checklist (15 points)
 
 ### Images
 1. **Unoptimized image formats** — Scan `public/` and asset imports for:
@@ -437,6 +570,10 @@ Scan actual files in public/, static/, and asset import patterns in source code.
    - Too many font weights/styles loaded (each adds ~20-50KB)
    - Font files not subset to used character ranges
    - Missing `font-display` declaration
+   - **Multiple static weight files instead of a variable font** — Shipping Regular + Medium +
+     Semibold + Bold as 4 separate files (~30KB each ≈ 120KB) when a single variable font with a
+     `wght` axis covers all weights (~50KB total). When 3+ weights are used, prefer the variable
+     build (e.g., `Inter-Variable.woff2`, `Roboto-Flex`).
 
 7. **Font file size** — Individual font files >100KB suggest missing subsetting.
    WOFF2 format should be used exclusively (best compression).
@@ -472,6 +609,36 @@ Scan actual files in public/, static/, and asset import patterns in source code.
     - API responses without appropriate cache-control
     - Missing `stale-while-revalidate` for semi-dynamic content
 
+### Video
+13. **Video not optimized for page load** — `<video>` elements without `preload="metadata"` or
+    `preload="none"` (eagerly downloads the full video on load), missing `poster` image (blocks
+    visual completeness and Largest Contentful Paint attribution), autoplay without `muted`
+    (blocked by browsers or very expensive when allowed), and below-fold videos not deferred
+    via Intersection Observer or a lightweight facade (e.g. click-to-play thumbnail for YouTube).
+    - Fix: `preload="metadata"` + `poster="..."` for above-fold hero videos; `preload="none"`
+      and lazy-mount below-fold videos. For long-form content, prefer adaptive streaming
+      (HLS/DASH) over direct `.mp4`. Replace embedded YouTube iframes with a thumbnail facade
+      (e.g. `lite-youtube`) until the user clicks.
+
+### Responsive Images
+14. **Raw `<img>` without responsive `srcset`/`sizes`** — Plain `<img>` tags serving a single
+    resolution to every viewport. Mobile users download the desktop-sized asset. Next.js
+    `<Image>` handles this automatically; plain `<img>` needs explicit `srcset` with ≥3 widths
+    that match real layout breakpoints plus a `sizes` attribute describing the slot. Use a
+    `<picture>` element when the crop (not just the resolution) changes by viewport (art direction).
+    - Fix: `<img srcset="hero-480.webp 480w, hero-960.webp 960w, hero-1920.webp 1920w"
+      sizes="(max-width: 768px) 100vw, 960px" src="hero-960.webp" alt="...">`.
+
+### Iframes
+15. **Iframes loaded eagerly** — `<iframe>` elements (YouTube, Vimeo, Google Maps, Stripe
+    Checkout, Typeform, Calendly, social embeds) without `loading="lazy"`. Each iframe is a
+    separate document tree that can cost hundreds of KB of JS plus its own render and hydration
+    path. Eager below-fold iframes block the main thread during initial load and often dominate
+    third-party JS cost.
+    - Fix: Add `loading="lazy"` for all below-fold iframes. For extra-heavy embeds (YouTube,
+      Maps) prefer a facade (`lite-youtube-embed`, static map image) that only swaps to the
+      real iframe on interaction.
+
 ## Files to Read
 - public/ directory listing (all static assets)
 - Layout/document files (font and CSS imports)
@@ -488,6 +655,12 @@ For each finding:
 - **Problem**: what's wrong
 - **Fix**: concrete change
 - **Estimated Savings**: KB, requests, or seconds
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -527,18 +700,21 @@ PROMPT_EOF
 
 If the context is too large, write it to a temp file first:
 ```bash
-CTX_FILE=$(mktemp /tmp/perf-context-XXXXXX.txt)
-trap "rm -f $CTX_FILE" EXIT
+CTX_FILE=$(mktemp "${TMPDIR:-/tmp}/perf-context-XXXXXX.txt")
+trap 'rm -f "$CTX_FILE"' EXIT
 cat package.json > "$CTX_FILE"
 echo "---" >> "$CTX_FILE"
 cat next.config.* >> "$CTX_FILE" 2>/dev/null
 echo "---" >> "$CTX_FILE"
-find src -name "*.tsx" -o -name "*.ts" | head -50 >> "$CTX_FILE"
+find src \( -name "*.tsx" -o -name "*.ts" \) | head -50 >> "$CTX_FILE"
 
-cat <<PROMPT_EOF | codex -a never exec -
-Read $CTX_FILE and the source files listed. Perform a deep frontend performance audit.
+{
+  printf 'Read %s and the source files listed. Perform a deep frontend performance audit.\n' "$CTX_FILE"
+  cat <<'PROMPT_EOF'
 For each finding report: Impact (HIGH/MEDIUM/LOW), File:Line, Problem, Fix, Estimated Savings.
+End with a priority-ranked top 10 list of fixes by expected impact.
 PROMPT_EOF
+} | codex -a never exec -
 ```
 
 **Fallback:** If Codex is unavailable (detected via `command -v codex`), launch a fifth Claude subagent with the same prompt.
@@ -555,6 +731,17 @@ Once all 5 agents return:
 3. **Cross-reference** — A bundle issue might explain a CLS issue (heavy JS delays hydration
    → late layout shift). Link related findings.
 4. **Unique findings** — Tag with source: `[Bundle Agent]`, `[Rendering Agent]`, etc.
+5. **Out-of-scope observations** — merge the `Out-of-scope observations` lists
+   from Agents 1, 2, 3, and 4 into a single deduplicated list. For each entry:
+   - If the responsible agent (or Codex) already reported the same `file:line`
+     as a full finding, **drop** the out-of-scope note — the full finding wins.
+   - If no agent caught it as a full finding, keep the note as a hint in the
+     dedicated report section (see Step 3). Do NOT upgrade it to a finding —
+     it was flagged without full investigation.
+
+**Scope discipline note:** Agents 1-4 are strictly bounded to their checklist.
+Agent 5 (Codex) is exempt and retains full cross-validation scope — that's
+what makes `[Confirmed by N/5]` meaningful.
 
 ## Step 3: Impact-Prioritized Report
 
@@ -650,6 +837,17 @@ Based on the audit, here's a suggested performance budget:
 - {N} findings confirmed by 3+ agents (highest confidence)
 - {N} findings confirmed by 2 agents
 - {N} findings from single agent (review recommended)
+
+## Out-of-scope Observations
+
+Notes from Agents 1-4 about items outside their assigned checklist. These
+were NOT fully investigated — treat as hints for manual follow-up, not as
+findings. Entries already captured as full findings above have been dropped.
+
+- file:line — short description [noticed by: Bundle Agent]
+- ...
+
+(or: "None")
 ```
 
 ## Step 4: Present & Act

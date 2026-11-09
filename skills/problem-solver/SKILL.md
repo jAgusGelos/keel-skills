@@ -1,41 +1,52 @@
 ---
 name: problem-solver
 description: |
-  Structured engineering problem-solving orchestrator. 7-step pipeline from understanding
-  through decomposition, design, implementation, testing, review, and delivery. Invokes
-  three-experts for architectural tradeoffs and multiple-iterations-reasoning for iterative
-  dual-engine refinement. Use this skill when asked to: problem solver, solve this,
-  structured problem solving, step by step solution, engineering problem, debug this
-  systematically, find and fix, root cause, solve step by step, systematic debugging,
-  break this down and solve it, methodical solution, analyze and solve, work through
-  this problem, diagnose and fix, structured debugging, solve this end to end,
-  comprehensive solution, full problem solving workflow, tackle this problem.
-version: 1.0.0
+  Structured engineering problem-solving and debugging orchestrator. Adaptive pipeline that
+  detects task type (bug/debugging vs feature/implementation) and routes accordingly.
+  For bugs: enforces root cause investigation with 4-phase systematic debugging before any fix.
+  For features: 7-step pipeline from understanding through delivery.
+  Invokes three-experts for architectural tradeoffs, multiple-iterations-reasoning for iterative
+  dual-engine refinement, and escalates via circuit breaker when debugging stalls.
+  Use this skill when asked to: problem solver, solve this, structured problem solving,
+  step by step solution, engineering problem, debug this systematically, find and fix,
+  root cause, solve step by step, systematic debugging, break this down and solve it,
+  methodical solution, analyze and solve, work through this problem, diagnose and fix,
+  structured debugging, solve this end to end, comprehensive solution, full problem solving
+  workflow, tackle this problem, why is this broken, fix this bug, investigate this issue,
+  trace this error, find the root cause, this stopped working, regression, intermittent failure,
+  race condition, debug, RCA, root cause analysis, bisect, what changed, why does this fail.
+version: 1.1.0
 category: reasoning
 depends: [three-experts, multiple-iterations-reasoning]
 ---
 
 # Problem Solver
 
-A master orchestrator for structured engineering problem-solving. Breaks complex problems
-into a 7-step pipeline that leverages specialized skills at the right moments: `three-experts`
-for architectural deliberation and `multiple-iterations-reasoning` for iterative dual-engine
-refinement.
+A master orchestrator for structured engineering problem-solving **and** systematic debugging.
+Detects whether the task is a bug/debugging scenario or a feature/implementation scenario,
+then routes through the appropriate pipeline — always grounded in evidence, never guessing.
 
-## Why This Exists
+## Three Iron Laws
 
-Ad-hoc problem solving skips steps. Engineers jump to implementation without understanding
-constraints, miss edge cases because they never decomposed the problem, or ship first-draft
-code that needed iteration. This skill enforces a disciplined pipeline that mirrors how
-senior engineers think — understand first, decompose, design with tradeoffs in mind,
-implement with refinement, test thoroughly, review critically, then deliver with confidence.
+These override everything else in this skill:
+
+1. **No fix without root cause.** Never patch symptoms. Understand *why* before changing *what*.
+2. **Evidence before claims.** Run the actual command, read the actual output, confirm the actual
+   exit code before declaring anything done. Ban hedging language ("should work", "probably fixed").
+3. **Smallest possible change.** Test hypotheses with minimal modifications. One variable at a time.
 
 ## Pipeline Overview
 
 ```
-[1 Understand]
+[1 Understand] → detect task type
       |
-      v
+      |--[BUG]------> [1.5 Root Cause Investigation]
+      |                    |
+      |                    v (root cause found)
+      |                    |
+      |--[FEATURE]--+------+
+      |             |
+      v             v
 [2 Decompose]
       |
       v
@@ -68,6 +79,9 @@ implement with refinement, test thoroughly, review critically, then deliver with
 5. Do not skip testing/review on code-changing tasks.
 6. Invoke specialist skills only when decision criteria are met, not by default.
 7. Deliver with a confidence rating and unresolved risks.
+8. **For debugging:** Root cause investigation (Step 1.5) is mandatory before any fix attempt.
+9. **Circuit breaker:** After 3 failed hypotheses in debugging, STOP and escalate to three-experts.
+10. **Verification is not optional.** Every claim of "fixed" must include fresh evidence.
 
 ---
 
@@ -80,18 +94,32 @@ Build a grounded understanding of the problem before any solution work.
 1. **Restate the problem** — Write a 2-3 sentence summary of what needs to be solved,
    including the user's stated goal and any implicit constraints.
 
-2. **Explore the repository** — Use Glob, Grep, and Read to gather real context:
+2. **Detect task type** — Classify the task:
+   - **BUG / DEBUGGING** — Something worked before and stopped, unexpected behavior,
+     error messages, performance degradation, intermittent failures, regressions.
+     → Route to Step 1.5 (Root Cause Investigation) after this step.
+   - **FEATURE / IMPLEMENTATION** — New capability, refactoring, enhancement, migration.
+     → Skip Step 1.5, proceed to Step 2 (Decompose).
+   - **AMBIGUOUS** — Ask the user: "Is this a bug to fix or a feature to build?"
+
+3. **Explore the repository** — Use Glob, Grep, and Read to gather real context:
    - Check `CLAUDE.md`, `AGENTS.md`, `README.md`, `memory-bank/` for project conventions
    - Read config files (`package.json`, `tsconfig.json`, `pyproject.toml`, etc.)
    - Locate files, modules, and code paths relevant to the problem
    - Identify existing patterns, conventions, and constraints
 
-3. **Build a context brief** — Compile findings into a structured summary:
+4. **Build a context brief** — Compile findings into a structured summary:
    - Tech stack with versions
    - Relevant file paths (real, verified)
    - Existing patterns and conventions
    - Current state of the problem area
    - Known constraints (performance, security, compatibility)
+
+5. **For bugs — additional context:**
+   - **Reproduce the failure** — Run the failing command/test, capture the actual error output
+   - **Isolate the failure point** — Narrow down to the specific file, function, and line
+   - **Identify the delta** — What changed? Check `git log`, `git diff`, recent commits
+   - **Capture the error signature** — Exact error message, stack trace, affected inputs
 
 **Effort cap:** ~8 targeted searches. Gather enough to understand the landscape, then move on.
 
@@ -103,6 +131,8 @@ Build a grounded understanding of the problem before any solution work.
 ### Problem Statement
 [2-3 sentence restatement of what needs solving]
 
+### Task Type: [BUG | FEATURE]
+
 ### Context Brief
 - **Stack:** [tech stack with versions]
 - **Relevant files:** [list of real file paths]
@@ -110,7 +140,125 @@ Build a grounded understanding of the problem before any solution work.
 - **Constraints:** [known limitations or requirements]
 - **Current state:** [what exists now, what's broken/missing]
 - **Context confidence:** Low | Medium | High
+
+### [BUG ONLY] Failure Evidence
+- **Error signature:** [exact error message or behavior]
+- **Reproduction:** [command/steps to reproduce]
+- **Failure point:** [file:line where it breaks]
+- **Delta:** [what changed — commit, config, dependency, environment]
 ```
+
+---
+
+## Step 1.5: Root Cause Investigation (DEBUGGING ONLY)
+
+**This step is mandatory for BUG tasks. Skip for FEATURE tasks.**
+
+Systematic 4-phase debugging that finds the actual root cause before any fix is attempted.
+This prevents the common failure mode where agents try random fixes, waste tokens, and
+compound the problem.
+
+**Prerequisite:** The bug must be reproducible before entering Phase 2. If reproduction
+fails after 2 attempts, document the reproduction gap and adjust: use log analysis,
+post-mortem data, or code inspection as the primary evidence source instead of live testing.
+
+### Phase 1: Categorize the Failure
+
+Before categorizing, gather all available telemetry: application logs, error tracking
+(Sentry/Datadog/etc.), monitoring dashboards, and recent deploy history. This raw data
+informs which category to select.
+
+Classify the bug into one of these root cause categories to guide investigation:
+
+| Category | Signals | Investigation approach |
+|---|---|---|
+| **Regression** | "It used to work", recent deploy/merge | `git bisect`, diff recent commits, check CI |
+| **State corruption** | Wrong data, unexpected values, stale cache | Trace data flow from source to symptom |
+| **Race condition** | Intermittent, timing-dependent, works on retry | Check async paths, shared state, concurrency |
+| **Config drift** | Works in one env but not another | Diff configs, env vars, versions across environments |
+| **Dependency change** | After upgrade, new lockfile, changed API | Check lockfile diff, dependency changelogs, API changes |
+| **Edge case** | Specific inputs trigger the bug | Map input space, find the boundary condition |
+
+### Phase 2: Pattern Analysis
+
+Compare working vs broken states to narrow the root cause:
+
+1. **Working reference** — Find a state where the behavior was correct:
+   - Last known good commit (`git log`, `git bisect`)
+   - Working environment or config
+   - Passing test case with similar logic
+   - Adjacent code that handles a similar case correctly
+
+2. **Diff analysis** — Compare working vs broken:
+   - Code diff between good and bad states
+   - Config/environment differences
+   - Data/input differences
+   - Dependency version differences
+
+3. **Narrow the scope** — Each comparison should halve the search space.
+   After this phase, you should know the **specific subsystem** where the root cause lives.
+
+### Phase 3: Hypothesis Testing
+
+Form and test hypotheses about the root cause, one at a time:
+
+1. **Form a hypothesis** — Based on Phase 2 evidence, state a specific, falsifiable hypothesis:
+   - "The bug is caused by [specific mechanism] in [specific location]"
+   - Not "something is wrong with the auth system" — too vague
+
+2. **Design the smallest test** — What is the minimal change or observation that would
+   confirm or refute this hypothesis?
+   - Add a single log statement
+   - Change one variable
+   - Run with one different input
+   - Comment out one block
+
+3. **Execute and observe** — Run the test, capture the output, compare with prediction.
+
+4. **Record the result** — Log the hypothesis and outcome:
+   ```
+   Hypothesis #N: [statement]
+   Test: [what you did]
+   Expected: [what you predicted]
+   Actual: [what happened]
+   Verdict: CONFIRMED | REFUTED | INCONCLUSIVE
+   ```
+
+5. **Iterate or escalate:**
+   - **CONFIRMED** → Root cause found. Proceed to Step 2 with the root cause as input.
+   - **REFUTED** → Form next hypothesis based on new evidence.
+   - **INCONCLUSIVE** → Refine the test to be more discriminating.
+
+6. **Clean up** — After each REFUTED or INCONCLUSIVE test, revert the test change
+   before forming the next hypothesis. Never stack test modifications.
+
+### Circuit Breaker: 3-Failure Escalation
+
+**After 3 refuted or inconclusive hypotheses, STOP debugging and escalate:**
+
+1. Compile all evidence gathered so far (failure signature, pattern analysis, hypothesis log)
+2. Invoke `/three-experts` with the debugging context and ask:
+   - "Given these 3 failed hypotheses and the evidence, what root cause categories haven't we explored?"
+   - "Is the architecture itself the problem? Should we question assumptions?"
+3. Use the expert deliberation to form the next hypothesis or pivot the investigation entirely.
+
+This circuit breaker prevents the common failure mode of trying endless random approaches.
+
+### Phase 4: Root Cause Statement
+
+Once confirmed, write a precise root cause statement:
+
+```
+## Root Cause
+
+**What:** [specific mechanism causing the bug]
+**Where:** [exact file:line or component]
+**Why:** [why this code/config is wrong — the logical error]
+**When introduced:** [commit, date, or event that introduced it]
+**Impact scope:** [what else might be affected by the same root cause]
+```
+
+**Only after writing the root cause statement, proceed to Step 2.**
 
 ---
 
@@ -122,6 +270,9 @@ Break the problem into manageable sub-problems and map their relationships.
 
 1. **Identify sub-problems** — List every distinct piece of work needed to solve the
    full problem. Each sub-problem should be independently describable.
+   - **For bugs:** The first sub-problem is always "fix the root cause" (from Step 1.5).
+     Additional sub-problems may include: regression tests, fixing related occurrences,
+     cleanup of workarounds.
 
 2. **Map dependencies** — Which sub-problems must be solved before others? Which are
    independent and parallelizable?
@@ -168,6 +319,7 @@ these conditions are true:
 - **Cross-cutting impact** on security, performance, reliability, data model, or API contracts
 - You are **uncertain** which approach is better after initial analysis
 - The sub-problem was classified as **Tradeoff + Complex** in Step 2
+- **Debugging escalation:** The circuit breaker fired in Step 1.5
 
 **Skip three-experts** when:
 
@@ -183,6 +335,7 @@ Invoke `/three-experts` with:
 - The repository context from Step 1
 - The dependency constraints from Step 2
 - Any constraints that the solution must satisfy
+- **For bugs:** Include the root cause statement and hypothesis log from Step 1.5
 
 Take the recommendation and implementation approach from the three-experts output
 as the design for that sub-problem.
@@ -223,12 +376,16 @@ before implementation begins.
 
 2. **Write the plan file** — Consolidate ALL outputs from Steps 1-3 into the plan file:
    - **Problem statement** (from Step 1)
+   - **Task type** — BUG or FEATURE (from Step 1)
    - **Context brief** — stack, relevant files, patterns, constraints, current state (from Step 1)
+   - **[BUG] Root cause statement** — full root cause with evidence chain (from Step 1.5)
+   - **[BUG] Hypothesis log** — all hypotheses tested with outcomes (from Step 1.5)
    - **Sub-problems** with classifications and complexity ratings (from Step 2)
    - **Dependency map** between sub-problems (from Step 2)
    - **Design decisions** for every sub-problem, including three-experts output if invoked (from Step 3)
    - **Success criteria** — expected outcomes and acceptance criteria per sub-problem,
      so Step 5 (Test) can verify correctness even after context reset
+   - **Verification commands** — exact commands to run to prove the fix/feature works
    - **Implementation handoff** — for each sub-problem, note whether it qualifies for
      multiple-iterations-reasoning based on Step 2 complexity classification, and include
      a "Next: Step 4 Implement" section so execution can resume without prior chat context
@@ -281,6 +438,8 @@ refinement when **any** of these conditions are true:
 3. **For non-trivial implementations:** Invoke `/multiple-iterations-reasoning` with the
    implementation code and the quality criteria it must meet
 4. **Take the final solution** from the iterations skill's Phase 3 output
+5. **For bugs:** Apply the fix to the root cause location identified in Step 1.5.
+   Do NOT apply the fix elsewhere until the root cause fix is verified.
 
 ### Output Format
 
@@ -301,32 +460,46 @@ refinement when **any** of these conditions are true:
 ## Step 5: Test
 
 Verify the implementation against requirements, edge cases, and constraints.
+**This step enforces the "Evidence Before Claims" iron law.**
 
 **What to do:**
 
 1. **Run existing tests** — Execute the project's test suite to check for regressions.
+   Capture the actual output and exit code. Do not summarize — show evidence.
 
-2. **Write targeted tests** — For new functionality, write tests covering:
+2. **For bugs — verify the fix:**
+   - Re-run the exact reproduction steps from Step 1
+   - Confirm the error no longer occurs (show the passing output)
+   - Verify the root cause is actually fixed, not masked
+
+3. **Write targeted tests** — For new functionality, write tests covering:
    - Happy path (main use case works)
    - Edge cases (empty inputs, boundaries, nulls, overflow)
    - Error cases (invalid inputs, failures, timeouts)
    - Integration points (does it work with adjacent components?)
+   - **For bugs:** Write a regression test that would have caught this bug
 
-3. **Verify constraints** — Check each constraint from Step 1:
+4. **Verify constraints** — Check each constraint from Step 1:
    - Performance: measure if relevant (time, memory, query count)
    - Security: check for injection, auth bypass, data exposure
    - Compatibility: verify against stated requirements
 
-4. **Manual verification** — For UI or behavioral changes, describe how to manually verify.
+5. **Verification evidence** — For every claim, include the actual command run and its output.
 
 ### Output Format
 
 ```
 ## Step 5: Test
 
+### Verification Evidence
+- Command: `[exact command]`
+- Exit code: [0/1/etc]
+- Output: [relevant output lines]
+
 ### Test Results
 - Existing tests: [PASS/FAIL — details if fail]
 - New tests written: [count and what they cover]
+- Regression test: [for bugs — what it covers]
 - Edge cases verified: [list]
 
 ### Constraint Verification
@@ -349,6 +522,8 @@ Final quality audit before delivery.
 | **Correctness** | Solves the stated problem? |
 | **Correctness** | All edge cases handled? |
 | **Correctness** | Error paths handled gracefully? |
+| **Root Cause** | [BUG] Fix addresses root cause, not symptoms? |
+| **Root Cause** | [BUG] No other instances of the same bug pattern? |
 | **Security** | No hardcoded secrets, tokens, or credentials? |
 | **Security** | Input validation present where needed? |
 | **Security** | No injection, XSS, or path traversal risks? |
@@ -358,8 +533,9 @@ Final quality audit before delivery.
 | **DRY** | Existing utilities/helpers used where applicable? |
 | **Conventions** | Follows project naming, structure, and patterns? |
 | **Conventions** | Consistent with surrounding code style? |
-| **Observability** | Logs/errors/metrics adequate? |
+| **Observability** | Logs/errors/metrics adequate for diagnosing future issues? |
 | **Operational** | Rollback/feature-flag strategy if needed? |
+| **Evidence** | All claims of "working" backed by fresh verification output? |
 
 ### Review Process
 
@@ -399,9 +575,15 @@ Present the complete solution with full transparency on quality and confidence.
 ### What Was Done
 [3-5 bullet summary of what changed and why]
 
+### [BUG] Root Cause Summary
+- **Cause:** [one-sentence root cause]
+- **Fix:** [one-sentence fix description]
+- **Regression test:** [what test prevents recurrence]
+
 ### Skills Invoked
 - three-experts: [Yes — for which sub-problem / No — why skipped]
 - multiple-iterations-reasoning: [Yes — for which implementation / No — why skipped]
+- [BUG] Circuit breaker fired: [Yes — at hypothesis #N / No]
 
 ### Confidence: [High / Medium / Low]
 [Brief justification referencing test results and review findings]
@@ -411,6 +593,9 @@ Present the complete solution with full transparency on quality and confidence.
 | **High** | Correct, tested, all requirements met, edge cases handled. Production-ready. |
 | **Medium** | Likely correct for main cases. Some edge cases may need validation. |
 | **Low** | Addresses core problem but has known gaps. Strong starting point. |
+
+### Verification Evidence
+[The exact commands and outputs that prove the solution works]
 
 ### Known Limitations
 - [Limitation or "None identified"]
@@ -423,67 +608,28 @@ Present the complete solution with full transparency on quality and confidence.
 
 ## Behavioral Rules
 
-1. **Never skip Step 1.** Understanding before action. A wrong mental model produces
-   wrong solutions regardless of implementation quality.
+Rules 1-3 (Iron Laws) and debugging-specific rules are embedded in steps above. These additional rules govern overall behavior:
 
-2. **Decompose before designing.** Step 2 before Step 3, always. Monolithic solutions
-   hide complexity and miss edge cases.
-
-3. **Invoke skills at the right moment, not reflexively.** Use three-experts for real
+1. **Invoke skills at the right moment, not reflexively.** Use three-experts for real
    tradeoffs, not obvious decisions. Use multiple-iterations for non-trivial code, not
    config changes. The decision criteria exist — follow them.
-
-4. **Ground everything in real code.** File paths, existing patterns, actual constraints.
+2. **Ground everything in real code.** File paths, existing patterns, actual constraints.
    Abstract reasoning disconnected from the codebase is not useful.
-
-5. **Each step must produce output.** No silent steps. The user should be able to follow
-   the reasoning chain from understanding to delivery.
-
-6. **Fix issues when found, not later.** If Step 5 or 6 reveals a problem, fix it
-   before proceeding. Do not defer known bugs to the user.
-
-7. **Be honest about confidence.** A "Medium" confidence with clear limitations is more
-   valuable than a false "High". Surface uncertainty — don't hide it.
-
-8. **Respect existing conventions.** The project has patterns for a reason. Follow them
-   unless the problem specifically requires deviation, and document why.
-
-9. **Adapt the pipeline to problem scale.** For truly simple problems (single file fix,
-   clear bug with obvious cause), compress Steps 2-3 into a brief note and proceed.
-   The pipeline serves the solution, not the other way around.
-
-10. **Self-contained delivery.** Step 7 must be usable without reading Steps 1-6.
-
-11. **Context preservation at checkpoints.** The plan file written in Step 3.5 must be
-    fully self-contained. If the user clears context after the checkpoint, every subsequent
-    step must be executable from the plan file alone — no implicit knowledge from earlier
-    conversation turns.
+3. **Each step must produce output.** No silent steps. The user should follow the full reasoning chain.
+4. **Fix issues when found, not later.** If Step 5 or 6 reveals a problem, fix it before proceeding.
+5. **Be honest about confidence.** "Medium" with clear limitations beats a false "High".
+6. **Respect existing conventions.** Follow them unless the problem requires deviation, and document why.
+7. **Adapt the pipeline to problem scale.** For simple problems, compress steps. The pipeline serves the solution.
+8. **Self-contained delivery.** Step 7 must be usable without reading Steps 1-6.
+9. **Context preservation.** The plan file in Step 3.5 must be fully self-contained for post-clear execution.
 
 ---
 
 ## Handling Special Cases
 
-**Bug Debugging / Root Cause Analysis:**
-- Step 1: Focus on reproducing the bug and locating the failure point
-- Step 2: Decompose into "find root cause" and "fix root cause" sub-problems
-- Step 3: Design the fix (may need three-experts if multiple fix strategies exist)
-- Step 5: Verify the bug is fixed AND no regressions introduced
-
-**Refactoring:**
-- Step 1: Understand what exists and why it was built that way
-- Step 2: Decompose into independent refactoring moves (extract, rename, restructure)
-- Step 3: Design the target architecture (likely needs three-experts)
-- Step 4: Implement incrementally — each move should leave tests passing
-
-**Performance Problems:**
-- Step 1: Profile and measure before optimizing
-- Step 2: Decompose into bottlenecks (ranked by impact)
-- Step 4: Implement fixes with before/after measurements
-- Step 5: Verify improvements with benchmarks, not intuition
-
-**Greenfield / New Feature:**
-- Consider whether `/spec-first` is more appropriate for planning-heavy work
-- Use problem-solver when the feature is well-defined and needs execution, not discovery
+- **Refactoring:** Decompose into independent moves. Design target architecture (likely needs three-experts). Implement incrementally — each move should leave tests passing.
+- **Performance:** Treat as BUG — root cause is "why is it slow?" Profile and capture baseline metrics before optimizing. Verify with benchmarks, not intuition.
+- **Greenfield:** Consider `/spec-first` for planning-heavy work. Use problem-solver when the feature is well-defined and needs execution, not discovery.
 
 ---
 
@@ -494,16 +640,19 @@ This skill follows the context-management protocol.
 - **Scratchpad:** `.workspace/ctx/problem-solver/`
 - **Checkpoint frequency:** After each step (1-7), especially at Step 3.5 plan checkpoint
 - **Subagent delegation:** Three-experts deliberation (Step 3), multiple-iterations-reasoning (Step 4), test execution (Step 5)
+- **Hypothesis log persistence:** For debugging, write hypotheses to scratchpad after each test to survive context compaction
 
 ## Quick Reference
 
 ```
-[1]   UNDERSTAND       ->  ~8 targeted searches, context brief
+[1]   UNDERSTAND       ->  ~8 targeted searches, context brief, detect BUG vs FEATURE
+[1.5] ROOT CAUSE       ->  [BUG ONLY] categorize → pattern analysis → hypothesis test → root cause statement
+      (circuit breaker) ->  3 failed hypotheses → escalate to /three-experts
 [2]   DECOMPOSE        ->  Sub-problems, dependencies, tradeoff classification
 [3]   DESIGN           ->  /three-experts if tradeoffs, direct if straightforward
 [3.5] PLAN CHECKPOINT  ->  EnterPlanMode, write plan, ExitPlanMode (user may /clear)
 [4]   IMPLEMENT        ->  /multiple-iterations-reasoning if non-trivial, direct if simple
-[5]   TEST             ->  Run tests, edge cases, constraint verification
-[6]   REVIEW           ->  Quality checklist audit (14 checks)
-[7]   DELIVER          ->  Complete solution + confidence + limitations
+[5]   TEST             ->  Run tests, edge cases, constraint verification, SHOW EVIDENCE
+[6]   REVIEW           ->  Quality checklist audit (17 checks)
+[7]   DELIVER          ->  Complete solution + confidence + limitations + evidence
 ```

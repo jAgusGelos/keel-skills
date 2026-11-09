@@ -2,12 +2,15 @@
 name: memory-bank
 description: |
   Preserve and restore project knowledge across Claude Code sessions using a structured
-  memory-bank/ directory. Use this skill whenever the user mentions "memory bank", "init memory",
-  "update context", "save project context", "preserve knowledge", "project knowledge", "mb init",
-  "mb update", "remember this for next time", or "save what we learned". Also trigger when the
+  memory-bank/ directory. Includes automatic session capture (compressed summaries of decisions,
+  errors, patterns, and file changes) and trajectory storage (decision sequences showing how
+  problems were solved, including failed approaches). Use this skill whenever the user mentions
+  "memory bank", "init memory", "update context", "save project context", "preserve knowledge",
+  "project knowledge", "mb init", "mb update", "remember this for next time", "save what we learned",
+  "save trajectory", "record how we solved this", or "capture the approach". Also trigger when the
   user explicitly asks to restore context from a previous session or wants persistent project
   knowledge beyond a single conversation.
-version: 1.0.0
+version: 1.1.0
 category: persistence
 depends: []
 ---
@@ -100,6 +103,94 @@ Maintain structured, project-scoped context that persists across Claude Code ses
 **Edge cases:**
 - **Some files missing:** Read what exists, note what's missing, offer to run INIT to fill gaps.
 - **Stale active-context:** If last update is >14 days old, flag it and suggest an UPDATE before proceeding.
+
+### 4. SESSION CAPTURE — Auto-generate session summary at session end
+
+**Trigger:** session is ending (user says "done", "that's it", "wrap up", "end session"), or after any substantial work block even without explicit trigger.
+
+**Steps:**
+
+1. Collect session activity: review all files created/modified, decisions made, errors encountered, and patterns discovered during the session.
+2. Generate a compressed summary (10-20 lines max) with these sections:
+   - `## Decisions` — key choices made and their rationale (1-3 bullets)
+   - `## Errors Resolved` — errors hit and how they were fixed (skip if none)
+   - `## Patterns Discovered` — new patterns, gotchas, or insights worth preserving (skip if none)
+   - `## Files Changed` — list of files created or modified with one-line purpose
+3. Create directory `memory-bank/sessions/` if it does not exist.
+4. Write the summary to `memory-bank/sessions/YYYY-MM-DD-HHmm.md` using current timestamp.
+5. If `active-context.md` exists, append a session log entry referencing the summary file.
+
+**Template:**
+
+```markdown
+# Session Summary — YYYY-MM-DD HH:MM
+
+## Decisions
+- <decision>: <why>
+
+## Errors Resolved
+- <error>: <resolution>
+
+## Patterns Discovered
+- <pattern>: <context>
+
+## Files Changed
+- <file path>: <what changed and why>
+```
+
+**Growth management:** Keep the last 30 session files. When exceeding 30, archive the oldest to `memory-bank/archive/sessions/` (create if needed).
+
+**Edge cases:**
+- **Trivial session (only reads, no changes):** Skip capture, do not create an empty summary.
+- **Multiple short sessions same day:** Use HHmm in filename to disambiguate.
+
+### 5. TRAJECTORY CAPTURE — Record how problems were solved, not just what
+
+**Trigger:** after resolving a non-trivial problem (debugging, architecture decision, tricky implementation), or when the user says "save trajectory", "record how we solved this", "capture the approach".
+
+**Steps:**
+
+1. Identify the problem that was solved during the session.
+2. Reconstruct the decision sequence: what was tried, what failed (and why), what worked (and why).
+3. Create directory `memory-bank/trajectories/` if it does not exist.
+4. Write the trajectory to `memory-bank/trajectories/YYYY-MM-DD-<slug>.md` where `<slug>` is a 2-4 word kebab-case descriptor (e.g., `2026-03-27-fix-auth-loop.md`).
+5. Cross-reference the trajectory in `active-context.md` Recent Decisions if the solution established a lasting pattern.
+
+**Template:**
+
+```markdown
+# Trajectory — <short problem title>
+
+## Problem
+<1-3 sentences describing the problem, symptoms, and context>
+
+## Approaches Tried
+1. **<Approach A>** — <what was done>
+   - Outcome: FAILED — <why it failed>
+2. **<Approach B>** — <what was done>
+   - Outcome: FAILED — <why it failed>
+3. **<Approach C>** — <what was done>
+   - Outcome: SUCCESS — <why it worked>
+
+## Final Solution
+<concise description of the working solution, with key file paths or code references>
+
+## Why It Worked
+<1-2 sentences explaining the root cause and why the final approach addressed it>
+
+## Lessons
+- <transferable insight for future sessions>
+```
+
+**Rules for trajectories:**
+- Only capture non-trivial problems (took 3+ attempts, or involved debugging, or produced a reusable insight).
+- Keep each trajectory under 40 lines. Link to source files rather than pasting code.
+- Failed approaches are as valuable as the solution — always include them.
+- When a trajectory matches an existing one in `memory-bank/trajectories/`, update the existing file with a `## Recurrence` section instead of creating a duplicate.
+
+**Edge cases:**
+- **Problem solved on first try:** Skip trajectory capture unless the solution reveals a non-obvious insight.
+- **Multiple problems in one session:** Create separate trajectory files for each.
 
 ---
 
@@ -250,18 +341,23 @@ Every file follows a strict format. Use bullet points for entries. Each entry sh
 8. **Preserve user edits** — if a user manually edited a file, respect their structure and content.
 9. **Never store secrets** — no tokens, passwords, API keys, or private credentials. If detected, remove immediately and warn the user.
 10. **Manage growth** — archive session logs beyond 15 entries to `memory-bank/archive/sessions.md`.
+11. **Auto-capture sessions** — generate a session summary at session end without requiring the user to ask. Skip if the session was trivial (read-only, no meaningful changes).
+12. **Record trajectories for non-trivial problems** — when a problem took multiple attempts to solve, capture the full decision sequence including failed approaches. Failed approaches are as valuable as the solution.
+13. **Deduplicate trajectories** — before creating a new trajectory file, check if `memory-bank/trajectories/` already has one for the same problem. If so, add a `## Recurrence` section to the existing file.
 
 ---
 
 ## File Ownership Guide
 
-| Information | Primary File |
+| Information | Primary Location |
 |---|---|
 | Project name, goals, users, scope | `project-brief.md` |
 | UI/UX, user flows, API surface | `product-context.md` |
 | Architecture, patterns, directory layout | `system-patterns.md` |
 | Stack, deps, dev commands, infra | `tech-context.md` |
 | Current work, decisions, tasks, log | `active-context.md` |
+| Session-end summaries (auto-captured) | `sessions/YYYY-MM-DD-HHmm.md` |
+| Problem-solving decision sequences | `trajectories/YYYY-MM-DD-<slug>.md` |
 
 ---
 
@@ -280,9 +376,18 @@ Every file follows a strict format. Use bullet points for entries. Each entry sh
 3. Agent: "Context restored. Project: [X]. Stack: [Y]. Last session you [Z]. Open challenges: [A]. Next steps: [B, C]. Want to continue with B?"
 
 **End of session:**
-1. User: "mb update"
+1. User: "mb update" (or session ending naturally)
 2. Agent reads current memory-bank + project files
-3. Agent: "Updated active-context.md: added session log, completed 2 tasks, added 3 next steps. Tech-context.md: updated React version to 19."
+3. Agent updates the 5 core files as needed
+4. Agent auto-generates `memory-bank/sessions/2026-03-27-1430.md` with compressed session summary
+5. If a non-trivial problem was solved, agent writes `memory-bank/trajectories/2026-03-27-fix-auth-loop.md`
+6. Agent: "Updated active-context.md: added session log, completed 2 tasks, added 3 next steps. Tech-context.md: updated React version to 19. Session summary saved. Trajectory captured for auth loop fix."
+
+**Trajectory capture — after debugging:**
+1. Agent resolves a problem that took multiple attempts
+2. Agent reconstructs the decision sequence: what was tried, what failed, what worked
+3. Agent writes `memory-bank/trajectories/2026-03-27-docker-networking.md`
+4. Agent: "Trajectory saved: Docker bridge networking failure on kernel 6.17+. 2 failed approaches documented, final solution uses --network host."
 
 ---
 

@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"t2"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"R15 | FAIL | HIGH | api.ts:40 | retries on 429 rate limit without backoff; also unauthorized 401 path swallowed | add backoff"}}
+{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}

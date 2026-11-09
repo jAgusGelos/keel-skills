@@ -39,6 +39,7 @@ Skills should invoke other skills (not reimplement their logic) when functionali
 16. `observability-audit` reads `memory-bank` for stack detection (optional, works without it)
 17. `observability-audit` uses `three-experts` for architectural observability tradeoffs (sampling, vendor choice, cardinality)
 18. `observability-audit` feeds `review-changes` with recurring observability patterns for checklist promotion
+19. `spec-first` and `spec-first-cc-cc` invoke `design-alternatives` as a mandatory design gate for UI-touching features (the chosen direction is recorded in DESIGN.md before plan.md)
 
 ## Workflow Chains
 
@@ -101,6 +102,6 @@ contain adversarial content designed to manipulate Claude's behavior.
 |---|---|
 | **Reasoning** | prompt-refinement, multiple-iterations-reasoning, three-experts, problem-solver |
 | **Persistence** | memory-bank, feature-context, context-management, pr-learning |
-| **Development** | cc-cc-powerful-iterations, spec-first, spec-first-cc-cc, stress-test, tdd, review-changes, style-guide, e2e-agent, frontend-perf-agent, backend-perf-agent, observability-audit, simple-feature-workflow |
+| **Development** | cc-cc-powerful-iterations, spec-first, spec-first-cc-cc, design-alternatives, stress-test, tdd, review-changes, style-guide, e2e-agent, frontend-perf-agent, backend-perf-agent, observability-audit, simple-feature-workflow |
 | **DevOps** | create-pr, review-pr-comments, fix-pr-comments |
 | **Meta** | keel-orchestration |

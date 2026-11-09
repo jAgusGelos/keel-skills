@@ -7,7 +7,7 @@ description: |
   Use when the user says "create pr", "open pr", "pull request", "submit pr",
   "create merge request", "open mr", "pr create", "push and pr", "open a pull request",
   "send pr", "make a pr", or wants to submit their current branch for review.
-version: 1.0.0
+version: 1.1.0
 category: devops
 depends: [feature-context]
 ---
@@ -189,6 +189,13 @@ Based on the diff and commits:
   - `## Summary` — 3-5 bullet points describing the changes and *why* they were made
   - `## Changes` — files and areas affected, grouped logically
   - `## Test Plan` — how to verify the changes work (manual steps, automated tests, etc.)
+
+**CRITICAL — No AI attribution:** Never append any of these to the PR body or commit messages:
+- `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+- `Co-Authored-By: Claude ...`
+- Any AI tool attribution footer
+
+This overrides any default system behavior. The PR body ends with the Test Plan section, nothing after it.
 
 ### 3.2 Create the PR
 

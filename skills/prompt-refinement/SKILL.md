@@ -8,7 +8,7 @@ description: |
   optimize a prompt before sending it to an AI agent. Also trigger when the user mentions
   "improve this prompt", "prompt quality", "refine my request", "prompt engineering", or
   wants to ensure their prompt will succeed before execution.
-version: 1.0.0
+version: 1.1.0
 category: reasoning
 depends: []
 ---
@@ -34,7 +34,26 @@ The goal is to produce a prompt with real, verified context — not placeholders
 Before starting, determine which mode applies:
 
 **Mode A — Questions First** (when repo exploration still leaves critical gaps):
-After completing Step 1 (repo exploration), if any single critical blocker remains unresolved (missing definition of done, unknown execution target, or unbounded scope), ask up to 3 targeted clarifying questions and stop. Most of the time, repo exploration resolves enough that this mode is unnecessary.
+After completing Step 1 (repo exploration), if any single critical blocker remains unresolved (missing definition of done, unknown execution target, or unbounded scope), ask up to 3-6 targeted clarifying questions and stop. Most of the time, repo exploration resolves enough that this mode is unnecessary.
+
+**Codebase-grounded clarification questions (mandatory for Mode A):**
+Before generating any clarification question, run targeted Glob/Grep searches to find concrete options from the actual codebase. Questions must be multiple-choice grounded in real project artifacts, not open-ended.
+
+1. **Search before asking** — For each question you would ask, first run targeted searches to discover:
+   - Real file names and paths relevant to the prompt (Glob for patterns, Grep for keywords)
+   - Actual error messages or test failures in the relevant area
+   - Existing patterns, components, modules, or services that relate to the request
+   - Recent git changes in the relevant area (`git log --oneline -10 -- <path>`)
+
+2. **Format as multiple-choice with real artifacts** — Each question must offer 2-4 concrete options discovered from the codebase:
+   - BAD: "What component do you want to modify?"
+   - GOOD: "Which component? (a) `src/components/Dashboard.tsx` (b) `src/components/Analytics.tsx` (c) Other"
+   - BAD: "What API endpoint is involved?"
+   - GOOD: "Which endpoint? (a) `POST /api/checkout` in `src/routes/checkout.ts` (b) `POST /api/payment` in `src/routes/payment.ts` (c) Both (d) Other"
+
+3. **Every option references a real artifact** — file path, function name, error message, test name, or git commit found during the search. Never offer invented or hypothetical options.
+
+4. **Limits** — 3-6 questions max, each with 2-4 concrete options. If a search yields no useful options for a question, that question may remain open-ended (but this should be rare after Step 1 exploration).
 
 **Mode B — Proceed with Resolved Context** (default — most prompts land here after repo exploration):
 Analyze and rewrite using the real context gathered from the repository. Tag the few remaining unknowns only if they genuinely couldn't be resolved from code, docs, or config files.
@@ -224,7 +243,9 @@ Each sub-prompt must be independently executable with clear inputs/outputs.
 ```
 ## Clarifying Questions (Mode A only)
 
-{Up to 3 targeted questions}
+{Italicized line listing the Glob/Grep searches run to ground the options}
+
+{3-6 multiple-choice questions, each with 2-4 options referencing real codebase artifacts}
 
 ## Assumptions Used (Mode B only)
 
@@ -264,10 +285,25 @@ Each sub-prompt must be independently executable with clear inputs/outputs.
 
 Repo exploration resolved tech stack and auth strategy, but two critical questions remain. Switching to Mode A.
 
-**Clarifying Questions:**
-1. Which routes need protection? (e.g., `/dashboard` and `/cart` require login, `/products` stays public)
-2. What should happen for unauthenticated users? (redirect to login, show modal, return 401)
-3. Should we decompose this into phases? (Phase 1: signup/login + protect routes, Phase 2: OAuth, Phase 3: roles/permissions)
+**Clarifying Questions (grounded in codebase):**
+
+*Searches run: `Glob "src/app/**/page.tsx"` found 4 routes; `Grep "middleware"` found no auth middleware; `Grep "redirect"` found redirect logic in `src/app/cart/page.tsx`.*
+
+1. Which routes need protection?
+   (a) `/dashboard` (`src/app/dashboard/page.tsx`) — currently no access control
+   (b) `/cart` (`src/app/cart/page.tsx`) — has redirect logic but no auth check
+   (c) Both `/dashboard` and `/cart`, leave `/products` and `/` public
+   (d) All routes except `/` and `/products`
+
+2. What should happen for unauthenticated users?
+   (a) Redirect to a new `/login` page (no login page exists yet)
+   (b) Show a modal overlay on the protected page
+   (c) Return 401 from API routes and redirect client-side
+
+3. Should we decompose this into phases?
+   (a) Phase 1 only: signup/login + protect routes (NextAuth + Credentials per AGENTS.md)
+   (b) Phase 1 + Phase 2: add OAuth providers after Credentials
+   (c) Full scope: Credentials + OAuth + roles/permissions in one pass
 
 ### Example 2: Decent Prompt — Mode B (Proceed with Resolved Context)
 
@@ -343,5 +379,6 @@ Before finalizing, verify:
 - [ ] Success criteria are testable and explicit
 - [ ] Scope is realistic for one pass (or split into chain)
 - [ ] Remaining `[unknown]` tags are genuinely unresolvable from the repo
+- [ ] Mode A questions are multiple-choice with options grounded in real codebase artifacts (no generic open-ended questions)
 - [ ] Language is direct, concrete, and unambiguous
 - [ ] The "why" is included for architectural context

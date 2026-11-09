@@ -12,8 +12,9 @@ description: |
   "three experts", "expert deliberation", "multi-perspective", "debate this", "architecture
   review", "think through this from multiple angles", "expert panel", "deliberate on", or
   asks for a decision with tradeoffs analyzed from different viewpoints.
-version: 2.0.0
+version: 2.1.0
 category: reasoning
+depends: []
 ---
 
 # Three Experts
@@ -248,15 +249,36 @@ responsibility domains so that any combination of 3 provides broad coverage.
 
 ---
 
-## Execution Model: 3 Separate Agents (Mandatory)
+## Execution Model: 3 Persistent Agents (Mandatory)
 
-Each expert MUST run as its own independent Agent subagent. A single context simulating
-3 voices collapses into one perspective with 3 labels. Separate agents ensure genuine
+Each expert MUST run as its own independent Agent subagent (`subagent_type: expert`,
+defined in `${CLAUDE_PLUGIN_ROOT}/agents/expert.md`: Opus, effort high). A single context simulating
+3 voices collapses into one perspective with 3 labels. When this skill is installed as
+the `keel-skills` plugin, the agent types are namespaced: `keel-skills:expert`,
+`keel-skills:explorer` and `keel-skills:codex-fallback-auditor`. If neither name is
+available, use `general-purpose` with the agent file's instructions in the prompt. Separate agents ensure genuine
 independence, true diversity, no dominance collapse, and parallel execution.
+
+**Launch once, continue with SendMessage.** The 3 agents are launched in round 1 only.
+Every later round and the voting round are follow-up messages to the SAME three agents
+(`SendMessage` with the agent's name or ID): each expert keeps the evidence it already
+verified in the repo, so a round costs one message plus the targeted lookups the new
+challenges need, not a fresh 50k start plus a re-exploration. Measured over 30 sessions,
+fresh-per-round agents averaged ~100 requests each; a continued agent needs 15-25.
+Never relaunch an expert between rounds unless its agent is gone (then relaunch it with
+its round-1 prompt plus the paths of its own previous position files).
+
+**Positions live on disk, digests travel.** Every round, each expert writes its full
+reasoning to `.workspace/ctx/three-experts/<feature>-r<N>-<role-slug>.md` and returns to
+the orchestrator ONLY the digest below (at most 15 lines). The orchestrator synthesizes
+from the digests and opens a full file only for a point it must adjudicate. The next
+round's message references the synthesis and the other experts' files by path; an
+expert that needs the full argument reads the file. The digest is not evidence, the
+file is.
 
 ### Agent Prompt Template
 
-Launch 3 Agent subagents in parallel, one per expert. Each receives:
+Round 1: launch 3 `expert` subagents in parallel, one per expert. Each receives:
 
 ```
 You are {Role Name} — {domain description}.
@@ -273,7 +295,10 @@ evidence — code is evidence.
 
 CONTEXT: {repository_context_from_step_1}
 PROBLEM: {user_problem}
-PREVIOUS POSITIONS (round 2+): {other_experts_positions}
+FEATURE SLUG: {feature_slug}
+YOUR POSITION FILE THIS ROUND: .workspace/ctx/three-experts/{feature_slug}-r{N}-{role_slug}.md
+SYNTHESIS OF PREVIOUS ROUND (round 2+): {path_to_synthesis_file}
+OTHER EXPERTS' FILES (round 2+): {paths_to_their_position_files}
 CHALLENGES TO ADDRESS: {challenges_from_previous_round}
 
 YOUR TASK FOR ROUND {N}:
@@ -290,13 +315,27 @@ RULES:
 - "Consider X" or "look into Y" are deliberation failures. Be specific.
 - Build on previous discussion, don't repeat
 - If your reasoning was wrong, say so explicitly and withdraw
+- Do not re-verify what you already established in earlier rounds; verify what is new
 
-STATUS: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+OUTPUT CONTRACT:
+- Write your FULL reasoning (all 6 task items, with file references) to your position file.
+- Reply with ONLY this digest (at most 15 lines):
+  POSITION: <2 sentences>
+  CHALLENGE: <expert>: <1 sentence + file:line>
+  DEVIL'S ADVOCATE: <1 sentence, or "not my turn">
+  ANTI-RECOMMENDATION: <1 sentence>
+  CONFIDENCE: <1-5>
+  STATUS: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT
+  FILE: <path of your position file>
 ```
 
-Collect all 3 responses. The orchestrator synthesizes each round: presents positions,
-resolves NEEDS_CONTEXT via codebase lookup, resolves factual sub-points, tracks dropouts
-and convergence, then feeds results into next round's prompts.
+Collect the 3 digests. The orchestrator synthesizes each round: presents positions,
+resolves NEEDS_CONTEXT via codebase lookup (delegate it to an `explorer` subagent when
+it is more than a grep), resolves factual sub-points, tracks dropouts and convergence,
+writes the synthesis to `.workspace/ctx/three-experts/<feature>-r<N>-synthesis.md`, and
+sends round N+1 to each expert with `SendMessage`: the synthesis path, the challenges
+addressed to that expert, the other experts' file paths, and the round's task. Keep the
+message short; the files carry the argument.
 
 ---
 
@@ -351,7 +390,11 @@ Anti-recommendation: [What NOT to do]
 
 ### Deliberation Rules
 
-1. **Minimum 3 rounds** — even if agreement seems early, force deeper analysis
+1. **Minimum 2 rounds, then the exit check**: after round 2, go straight to the voting
+   round only if ALL hold: no expert is BLOCKED or NEEDS_CONTEXT; every challenge raised
+   has a recorded resolution or withdrawal; the remaining experts state the decisive
+   points in the same terms. If any fails, round 3 is mandatory (round-1 agreement alone
+   never satisfies the check; see Edge Cases)
 2. **Maximum 6 rounds** — if no consensus by round 6, go to majority recommendation
 3. **No repeated arguments** — each round must introduce new reasoning or evidence
 4. **Falsifiable claims only** — concrete, testable statements. "Consider X" = failure
@@ -370,7 +413,8 @@ Anti-recommendation: [What NOT to do]
 
 ## Step 3.5: Voting Round (Mandatory)
 
-Each remaining expert casts a formal vote:
+Each remaining expert casts a formal vote, requested with `SendMessage` to its existing
+agent (never a fresh agent: the vote must come from the context that argued the rounds):
 
 ```
 ### Voting
@@ -401,19 +445,33 @@ focused round to narrow to 2, then re-vote.
 After voting, run an independent Codex validation to catch blind spots that all 3 Claude
 agents might share due to same-model bias. This is the cross-engine check.
 
+Use the hardened `codex exec` invocation — sandbox bypass, stdin redirect, timeout,
+file-based prompt and output. A bare `codex exec "..."` without these flags can hang in
+sandboxed environments (stdin left open, or a sandbox that blocks Codex's own shell
+tools). NEVER interpolate the problem,
+context, or consensus text directly into the shell command string — write them to a
+file with the Write tool and have Codex read it from disk:
+
+1. **Write the deliberation dossier** to a temp file (Write tool), containing three
+   sections: `## Problem` (the user's problem), `## Repository Context` (the Step 1
+   context brief), and `## Consensus Recommendation` (the voting result + rationale).
+
+2. **Run the hardened invocation:**
+
 ```bash
-codex exec "You are an adversarial reviewer validating an architecture decision made by 3 expert agents.
+PROMPT_FILE=$(mktemp /tmp/three-experts-codex-XXXXXX.txt)
+CODEX_OUT=$(mktemp /tmp/three-experts-codex-XXXXXX.jsonl)
+CODEX_ERR=$(mktemp /tmp/three-experts-codex-XXXXXX.err)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 
-PROBLEM:
-{user_problem}
+# DOSSIER_FILE = the file written in step 1 (path expands OUTSIDE the quoted heredoc)
+printf 'Read this file in full FIRST: %s\n\n' "$DOSSIER_FILE" > "$PROMPT_FILE"
 
-REPOSITORY CONTEXT:
-{repository_context_brief}
-
-CONSENSUS RECOMMENDATION:
-{voting_result_and_rationale}
-
-Your job is to find flaws, blind spots, or risks the experts missed. Be critical and specific.
+cat >> "$PROMPT_FILE" <<'PROMPT_EOF'
+You are an adversarial reviewer validating an architecture decision made by 3 expert
+agents. The file above contains the problem, the repository context, and the consensus
+recommendation. Your job is to find flaws, blind spots, or risks the experts missed.
+Be critical and specific.
 
 Review for:
 1. FACTUAL ERRORS — Do the experts' claims about the codebase match reality? Verify file paths, dependency capabilities, and API contracts they referenced.
@@ -428,10 +486,32 @@ For each finding:
 - Evidence: Why you believe this (reference specific files or patterns)
 - Suggestion: What should change in the recommendation
 
-End with: ENDORSE (recommendation is sound) / AMEND (recommendation needs specific changes) / REJECT (fundamental flaw, reconsider)" 2>&1
+End with: ENDORSE (recommendation is sound) / AMEND (recommendation needs specific changes) / REJECT (fundamental flaw, reconsider)
+PROMPT_EOF
+
+CODEX_ANSWER=$(mktemp /tmp/three-experts-codex-XXXXXX.answer.md)
+CODEX_STATUS=$(mktemp /tmp/three-experts-codex-XXXXXX.status)
+if python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex/codex-status.py" preflight > "$CODEX_STATUS"; then
+  timeout 360 codex exec --json -C "$REPO_ROOT" --skip-git-repo-check \
+    --dangerously-bypass-approvals-and-sandbox "$(cat "$PROMPT_FILE")" \
+    < /dev/null > "$CODEX_OUT" 2> "$CODEX_ERR"
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/codex/codex-status.py" classify --exit $? --out "$CODEX_OUT" \
+    --answer-file "$CODEX_ANSWER" > "$CODEX_STATUS"
+fi
+cat "$CODEX_STATUS"   # status=ok -> the review is in $CODEX_ANSWER
 ```
 
-**Fallback:** If Codex is unavailable, launch a Claude subagent with the same prompt.
+`status=ok` means `$CODEX_ANSWER` holds the review. Clean up the `/tmp/three-experts-*`
+temp files after integrating the findings. Classification and the quota memo follow
+`${CLAUDE_PLUGIN_ROOT}/scripts/codex/README.md` (only terminal JSONL events count; stderr is ignored).
+
+**Fallback:** any other status (`not-installed`, `quota`, `capacity`, `auth`, `timeout`,
+`failed`) means Codex is unavailable: launch ONE `codex-fallback-auditor` subagent
+(`${CLAUDE_PLUGIN_ROOT}/agents/codex-fallback-auditor.md`: Sonnet, read-only) with the same prompt file
+(same dossier, same adversarial mandate, same ENDORSE / AMEND / REJECT output). Do not skip
+the adversarial review, but never re-invoke Codex and never wait for a quota reset. Label
+the ADR's "Codex Validation" section `Claude-only; Codex unavailable: <status>` so nobody
+reads it as a Codex verdict.
 
 **Integration:** If Codex returns AMEND or REJECT:
 - Present Codex findings to the user alongside the expert consensus
@@ -518,7 +598,8 @@ or implementation approaches.]
 
 - **Problem too simple:** Say so. Suggest asking directly instead of 3-expert deliberation.
 - **Experts agree from round 1:** Force deeper analysis. Round 2: each must identify a risk
-  others haven't mentioned. Genuine consensus only confirmed after round 3.
+  others haven't mentioned. Genuine consensus is confirmed only by the round-2 exit check
+  (rule 1), never by round-1 agreement; if the check fails, round 3 runs.
 - **No relevant code (greenfield):** Experts reason about conventions and config constraints.
   Acknowledge the limitation in the context brief.
 - **Custom experts:** User-specified roles replace the 6 roles. Mechanics stay the same.
@@ -533,13 +614,18 @@ This skill follows the context-management protocol.
 
 - **Scratchpad:** `.workspace/ctx/three-experts/`
 - **Checkpoint frequency:** After each deliberation round
-- **Subagent delegation:** Sub-point factual resolution (codebase lookups during challenges)
+- **Subagent delegation:** Sub-point factual resolution (codebase lookups during challenges,
+  as `explorer`)
+- **Files:** `<feature>-r<N>-<role>.md` (expert positions), `<feature>-r<N>-synthesis.md`
+  (orchestrator synthesis per round)
 
 ## Quality Checklist
 
 Before presenting the final recommendation, verify:
 - [ ] Repository explored, real file paths in expert reasoning
-- [ ] At least 3 deliberation rounds occurred
+- [ ] Experts launched once (`expert` type) and continued with SendMessage; positions
+      written to `.workspace/ctx/three-experts/`, digests only in the orchestrator
+- [ ] At least 2 deliberation rounds occurred, and round 3+ ran whenever the exit check failed
 - [ ] Each expert received full role definition (scope, boundaries, red flags, questions)
 - [ ] Each expert contributed unique insights per round
 - [ ] Experts challenged each other with evidence-based arguments

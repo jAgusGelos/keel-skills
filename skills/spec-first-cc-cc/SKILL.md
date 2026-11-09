@@ -1,594 +1,271 @@
 ---
 name: spec-first-cc-cc
 description: |
-  Dual-engine specification workflow that combines spec-first planning with cc-cc cross-validation.
-  Runs the full spec-first pipeline (capture, research, three-experts, plan, todo) with dual-engine
-  adversarial review at generation steps — Codex audits what Claude drafts, instead of co-generating.
-  Every planning step runs through both Claude and Codex in parallel, producing a cross-validated
-  plan.md and todo.md that benefits from two independent perspectives.
-  Use this skill when the user says "spec first cc-cc", "dual engine planning", "plan with codex",
-  "cross-validated spec", "cc-cc planning", "dual spec", or when `/simple-feature-workflow`
-  Phase 2 selects the dual-engine option.
-version: 1.0.0
+  Dual-engine specification workflow that extends spec-first with cc-cc cross-validation.
+  Runs the full spec-first pipeline (brainstorm, capture, research, three-experts, design
+  gate, plan, todo, findings, checkpoint, next-session prompt) and adds an adversarial
+  Codex audit once both plan.md and todo.md are drafted: Claude DRAFTS them, a deterministic
+  lint checks the template, Codex AUDITS both against an 18-item checklist of what really
+  escaped in past runs, Claude REVISES. The second engine audits; it does not co-generate. Produces a cross-validated plan.md and todo.md
+  plus the standard spec-first artifacts (findings.md with a Codex Audit Summary, and
+  NEXT_SESSION_PROMPT.md so the user can start a fresh implementation session by
+  copy-pasting one path). For UI-touching features, runs the design-alternatives skill as
+  a mandatory design gate (Step 5b) before plan.md — the user picks a visual direction
+  from an HTML mockup of 2-4 alternatives, recorded as DESIGN.md, so implementation never
+  starts with an undecided or generic UI. Supports optional worktree mode (trigger words:
+  "worktree", "--worktree", "in a worktree", "separate worktree") that bakes worktree
+  setup, dependency install, and env copy instructions into NEXT_SESSION_PROMPT.md so the
+  implementation runs in isolation. Use this skill when the user says "spec first cc-cc",
+  "dual engine planning", "plan with codex", "cross-validated spec", "cc-cc planning",
+  "dual spec", or when `/simple-feature-workflow` Phase 2 selects the dual-engine option.
+version: 1.1.0
 category: development
-depends: [spec-first, cc-cc-powerful-iterations, three-experts]
+depends: [spec-first, three-experts, design-alternatives, review-changes]
 ---
 
 # Spec First CC-CC — Dual-Engine Planning with Adversarial Review
 
-Build a shared mental model of a feature before writing code. Produce two artifacts:
-`plan.md` (the spec) and `todo.md` (the execution checklist). Code comes after, never before.
+This skill is a **delta over `spec-first`**: the entire pipeline, templates, output
+format, implementation-phase rules, anti-patterns, and quality checklist come from the
+`spec-first` skill. This file defines ONLY what changes. Do not restate or re-derive the
+base pipeline from memory — load it.
 
-This skill extends `spec-first` by adding a second engine (Codex CLI) as an **adversarial reviewer**
-at plan and todo generation steps. The second engine audits — it does not co-author. This preserves
-the internal coherence of each artifact while catching blind spots a single engine would miss.
+**How to run:**
+
+1. **Invoke the `spec-first` skill** (Skill tool) to load the base pipeline.
+2. Follow it step by step, applying the **Deltas** below at the steps they name.
+3. Everything not mentioned in the Deltas section is identical to `spec-first`.
 
 ## Why This Exists
 
-`spec-first` produces excellent plans through a disciplined uncertainty-reduction pipeline.
-The dual-engine addition targets the specific steps where a second perspective adds value:
-**auditing generated artifacts against checklists, anti-patterns, and templates**. It does NOT
-replace structured reasoning (three-experts) with generic parallel generation, because
-role-differentiated adversarial deliberation is categorically better than two generic engines
-producing monologues.
+`spec-first` produces excellent plans through a disciplined uncertainty-reduction
+pipeline. The dual-engine addition targets the specific steps where a second perspective
+adds value: **auditing generated artifacts against checklists, anti-patterns, and
+templates**. It does NOT replace structured reasoning (three-experts) with generic
+parallel generation, because role-differentiated adversarial deliberation is
+categorically better than two generic engines producing monologues.
 
-**Core principle:** Draft/Audit, not Co-Author. Merging two independently generated plans
-destroys the internal coherence (assumption chains, AD-ID traceability, task dependency ordering)
-that makes a plan useful.
+**Core principle:** Draft/Audit, not Co-Author. Merging two independently generated
+plans destroys the internal coherence (assumption chains, AD-ID traceability, task
+dependency ordering) that makes a plan useful.
 
-## The Cycle
+## The Cycle (deltas marked with ★)
 
 ```
-User Feature Request
-     |
-     v
-[1] Capture and Confirm (scope, boundaries, user approval)
-     |
-     v
-[2] Parallel Research (3 focused threads: Codebase, Dependencies, Memory Bank)
-     |
-     v
-[3] Synthesize and Classify Gaps (Known / Inferred / Unknown)
-     |
-     v
-[4] Clarify Critical Unknowns (up to 3 questions, STOP and wait)
-     |
-     v
-[5] Three Experts Reasoning (via three-experts skill)
-     |
-     v
-[6] Claude DRAFTS plan.md → Codex AUDITS → Claude REVISES
-     |
-     v
-[7] Claude DRAFTS todo.md → Codex AUDITS → Claude REVISES
-     |
-     v
-[8] Plan Checkpoint
+[0]  Brainstorm (skippable)          — as spec-first
+[1]  Capture and Confirm (+1b worktree) — as spec-first
+[2]  Parallel Research               — as spec-first
+[3]  Synthesize and Classify Gaps    — as spec-first
+[4]  Clarify Critical Unknowns       — as spec-first
+[5]  Three Experts Reasoning         — as spec-first (NEVER replaced by dual-engine)
+[5b] Design Alternatives Gate        — as spec-first (★ explicitly NO Codex audit here)
+[6]  plan.md   ★ Claude DRAFTS (no audit yet)
+[7]  todo.md   ★ Claude DRAFTS → lint-plan.py → ONE Codex audit of plan+todo → Claude REVISES both
+[8]  findings.md ★ + Codex Audit Summary section (draft-only, no audit)
+[9]  Plan Checkpoint ★ + audit summary in the checkpoint
+[10] NEXT_SESSION_PROMPT.md ★ + audit results, cc-cc labels
+[IMPLEMENTATION] per-milestone /review-changes --light --fix gate and final FULL
+                 review — exactly as spec-first defines them
 ```
 
----
-
-## Step-by-Step
-
-### Step 1: Capture and Confirm the Feature Request
-
-Restate the user's request in one tight paragraph with explicit scope boundaries:
-
-- Intended outcome
-- In-scope behavior
-- Out-of-scope assumptions (if known)
-
-Present this restatement to the user and ask them to confirm before proceeding.
-
-Why: framing prevents plan drift. Confirming early avoids wasted research on a
-misunderstood request.
-
-### Step 2: Parallel Research
-
-Launch multiple Agent subagents simultaneously to gather context. If subagents are
-unavailable, perform the same research sequentially using Glob, Grep, and Read directly.
-
-**Thread A — Codebase Structure:**
-
-- Use Glob to map directory layout and find relevant files
-- Use Grep to locate features, routes, services, models related to the request
-- Identify architectural entry points and coupling hotspots
-- Record concrete file paths for every finding
-
-**Thread B — Dependencies & Configuration:**
-
-- Use Read on package.json, pyproject.toml, go.mod, or equivalent
-- Check for relevant config files (tsconfig, docker-compose, CI configs)
-- Identify what's available vs. what needs adding
-
-**Thread C — Memory Bank Context:**
-
-- Use Glob to check for `memory-bank/` directory (also check `docs/`, `.memory/`, `context/`)
-- If found, use Read on (in priority order):
-  - `memory-bank/project-brief.md`
-  - `memory-bank/tech-context.md`
-  - `memory-bank/system-patterns.md`
-  - `memory-bank/active-context.md`
-  - `memory-bank/core-flows.md`
-- If files are absent, explicitly report missing context docs
-
-Why: architecture decisions need evidence, not guesses. The memory bank prevents
-proposing solutions that contradict established project decisions.
-
-### Step 3: Synthesize and Classify Gaps
-
-Create a short synthesis:
-
-- What is known with confidence (cite file paths)
-- What is inferred from code patterns (cite evidence)
-- What is unknown
-
-Classify each unknown:
-
-- **Critical** — blocks correctness or safety, cannot proceed without it
-- **Important** — affects architecture or sequencing, but can use reasonable defaults
-- **Nice-to-have** — can proceed without
-
-Why: separates true blockers from things resolved during implementation.
-
-### Step 4: Clarify or Continue
-
-If any Critical unknown exists:
-
-- Ask up to 3 targeted, decision-oriented questions
-- Make questions specific and multiple-choice when possible
-- Bad: "What do you want?" Good: "Should this support batch operations or single-item only?"
-- Then STOP and wait for answers
-
-Once answers arrive, reclassify remaining unknowns. If all Critical gaps are resolved,
-continue to Step 5. If not, inform the user which gaps remain.
-
-If no Critical unknowns exist, proceed with explicit assumptions documented.
-
-Why: prevents speculative design built on false assumptions.
-
-### Step 5: Three Experts Reasoning (via `three-experts` skill)
-
-**Invoke the `three-experts` skill** to reason about architecture decisions from multiple
-perspectives. The skill will:
-
-1. Use the repository context gathered in Step 2 (no need to re-explore)
-2. Select 3 domain-specific experts based on the problem type
-3. Run structured deliberation rounds with challenges, sub-point resolution, and dropouts
-4. Conduct a formal voting round
-5. Produce a consensus recommendation with tradeoffs and implementation approach
-
-**Adaptation for spec-first-cc-cc:** When invoking three-experts, pass the following context:
-
-- The confirmed feature request from Step 1
-- The synthesis and gap classification from Steps 3-4
-- The resolved context from Step 2 (file paths, tech stack, patterns)
-
-The three-experts output feeds directly into the Architecture Decisions section of plan.md.
-**Safety and correctness constraints always take priority** over convenience or speed.
-
-Why: avoids one-dimensional architecture choices and surfaces tradeoffs early. Using the
-full three-experts skill ensures structured deliberation with evidence-based challenges
-instead of a simplified inline reasoning pass. Role-differentiated adversarial deliberation
-is categorically better than two generic engines producing parallel proposals.
-
-### Step 6: Generate plan.md (Draft/Audit/Revise)
-
-Before writing, check if plan.md already exists in the target location. If it does,
-ask the user whether to overwrite or create a new version (e.g., plan-v2.md).
-
-**Phase A — Claude Drafts:**
-
-Write plan.md to `.workspace/features/<feature-name>/plan.md` (NEVER to project root) using this template:
-
-```markdown
-# Plan: [Feature Name]
-
-> Generated via spec-first-cc-cc workflow on [date]
-
-## Executive Summary
-
-- **Problem:** [what needs solving]
-- **Desired outcome:** [what success looks like]
-- **Scope:** [what's included]
-- **Non-goals:** [what's explicitly excluded]
-- **Success criteria:** [how we know it's done]
-
-## Commands
-
-- **Build:** `[command]`
-- **Test:** `[command, including single-file run]`
-- **Lint:** `[command]`
-- **Dev server:** `[command]`
-
-## Architecture Decisions
-
-### AD-1: [Title]
-
-- **Context:** [why this decision is needed]
-- **Options considered:** [alternatives]
-- **Chosen approach:** [decision]
-- **Rationale:** [why, referencing expert perspectives]
-- **Evidence:** [file paths and patterns that informed this]
-- **Tradeoffs:** [what we're giving up]
-- **Consequences:** [what this commits us to]
-
-### AD-2: [Title]
-
-[Same structure]
-
-## Dependencies
-
-### New Dependencies
-
-| Package/Module | Purpose      | Risk Level     |
-| -------------- | ------------ | -------------- |
-| [name]         | [why needed] | [low/med/high] |
-
-### Existing Dependencies Leveraged
-
-- [dependency] — used for [purpose]
-
-### Internal Module Dependencies
-
-- [module A] depends on [module B] — [why ordering matters]
-
-## Non-Functional Requirements
-
-- **Auth/Security:** [requirements or N/A]
-- **Performance:** [SLOs, latency, throughput expectations]
-- **Migration/Backward Compatibility:** [breaking changes, data migration needs]
-- **Observability:** [logging, monitoring, alerting needs]
-
-## Three-Tier Boundaries
-
-### Always
-
-- [Rules agents must always follow, e.g., run tests before commits]
-- [Follow naming conventions from existing codebase]
-
-### Ask First
-
-- [Changes requiring human approval, e.g., DB schema changes]
-- [API contract changes, new external dependencies]
-
-### Never
-
-- [Hard prohibitions, e.g., commit secrets or API keys]
-- [Delete production data, skip required tests, bypass auth]
-
-## Risks & Mitigations
-
-| Risk                  | Likelihood     | Impact         | Mitigation            |
-| --------------------- | -------------- | -------------- | --------------------- |
-| [what could go wrong] | [low/med/high] | [low/med/high] | [prevention/handling] |
-
-## Strategy
-
-### Phase 1: [Name — smallest shippable slice]
-
-[What gets built first, why it comes first, exit criteria]
-
-### Phase 2: [Name]
-
-[What comes next, dependencies on Phase 1, exit criteria]
-
-## Open Questions
-
-- [ ] [Question] — Why it matters: [context]. Default if unanswered: [fallback]
-
-## Conformance Criteria
-
-Testable assertions that validate the plan was followed correctly:
-
-- [ ] [e.g., "All API endpoints return consistent error format defined in types/errors.ts"]
-- [ ] [e.g., "No direct DB queries outside the repository layer"]
-- [ ] [e.g., "Every new route has integration test coverage"]
-- [ ] [e.g., "Feature flags gate all user-visible changes"]
-```
-
-**Phase B — Codex Audits:**
-
-Send the drafted plan.md to Codex for adversarial review:
-
-```bash
-codex -a never exec "You are auditing a plan.md for a software feature. Review it against this checklist and report ALL failures:
-
-TEMPLATE COMPLETENESS:
-- [ ] Has all sections: Summary, Commands, Architecture Decisions, Dependencies, NFRs, Boundaries, Risks, Strategy, Open Questions, Conformance
-- [ ] Every AD has: Context, Options, Chosen approach, Rationale, Evidence (file paths), Tradeoffs, Consequences
-- [ ] AD-IDs are sequential and referenced consistently
-
-QUALITY:
-- [ ] Conformance criteria are testable assertions, not vague goals
-- [ ] Three-Tier Boundaries have project-specific rules, not generic placeholders
-- [ ] Risks have concrete mitigations, not 'handle appropriately'
-- [ ] Strategy phases have exit criteria
-- [ ] Dependencies include risk levels with justification
-- [ ] No vague specs — every statement is concrete and falsifiable
-
-ANTI-PATTERNS:
-- [ ] No over-specifying implementation (spec defines WHAT/WHY, not HOW)
-- [ ] No missing boundaries (Never/Always rules are explicit)
-- [ ] No ignored existing patterns (checks codebase conventions)
-- [ ] No hidden assumptions (all assumptions are documented)
-
-PLAN:
-$(cat .workspace/features/<feature-name>/plan.md)
-
-Report each failure with: section, issue, suggested fix."
-```
-
-**Phase C — Claude Revises:**
-
-Incorporate all valid audit findings into plan.md. For each finding:
+## Deltas
+
+### Step 5b — Design gate: no Codex audit
+
+The gate runs exactly as in `spec-first`. **Do not add a Codex audit phase to it** — the
+gate's reviewer is the USER looking at rendered alternatives in a browser; Codex cannot
+see the rendered output, and the decision is a taste/product call, not an
+artifact-consistency check. Codex will still audit the plan.md that encodes the chosen
+direction (Step 7 Phase B).
+
+### Step 6 — plan.md is drafted, not audited yet
+
+Use spec-first's Step 6 template and overwrite rules unchanged, with the header line
+reading `> Generated via spec-first-cc-cc workflow on [date]`. Write plan.md exactly as
+spec-first specifies. The audit waits for todo.md (Step 7): one audit of both files
+checks traceability and costs one Codex call instead of two. (The old separate todo.md
+audit was about 45% rejected noise, mostly "split this task".)
+
+### Step 7 — todo.md drafted, then one Draft/Audit/Revise over both
+
+**Phase A — Claude Drafts:** write todo.md exactly as spec-first specifies. Then run
+`python3 "${CLAUDE_PLUGIN_ROOT}/skills/spec-first-cc-cc/scripts/lint-plan.py" .workspace/features/<feature-name>`
+and fix every problem it lists (missing sections, AD fields, AD-ID sequence, milestones
+without Verify, todo/AD traceability). Template completeness is checked here,
+deterministically, never by an LLM.
+
+**Phase B — Codex Audits:** read `references/codex-audit.md` and run its invocation. Codex
+answers the 18 items of `references/codex-checklist-plan.md` (core scenarios traced
+through frozen contracts, AC-to-Verify mapping, acceptance step on the real stack, repo
+validators, owners for known gaps, integration path, launch dependencies, guards on
+destructive or paid operations, ...) one line per ID. Route on the status file exactly
+as that reference says: a partial or unavailable Codex run goes to the
+`codex-fallback-auditor` for the missing IDs or the full list. One attempt; never
+retry, never wait, never block.
+
+**Phase C — Claude Revises:** for every `FAIL` line (and every `OTHER` item), fix plan.md
+and/or todo.md with targeted `Edit` calls, one per finding (or one per section when a
+finding adds a section). NEVER regenerate either file in full after the audit: a full
+rewrite re-emits 20-35 KB through the orchestrator's context for a handful of changed
+lines (measured: one run re-emitted a 35 KB plan.md and a 22 KB todo.md this way) and risks
+silently dropping AD-IDs or reordering the assumption chain. For each FAIL:
 - If it identifies a real gap: fix it
-- If it suggests an improvement: incorporate it
-- If it's a false positive: note why and skip it
+- If it is a false positive: note why and skip it
+Re-run `lint-plan.py` after the edits; it must stay clean.
 
-Show the user the audit summary and the revised plan.
+Show the user the audit summary and the revised artifacts.
 
-### Step 7: Generate todo.md (Draft/Audit/Revise)
+### Step 8 — findings.md gains a Codex Audit Summary
 
-Before writing, check if todo.md already exists. Same overwrite rules as plan.md.
-
-**Phase A — Claude Drafts:**
-
-Write todo.md to `.workspace/features/<feature-name>/todo.md` (NEVER to project root).
-Every task should be atomic and independently testable. Order by dependency. Reference
-AD-IDs from plan.md to maintain traceability.
+findings.md stays **draft-only — no Codex audit phase** (it records research, not a
+generated spec; the draft/audit loop adds no value there). Use spec-first's template
+plus this extra section, placed after "Design Gate (Step 5b)":
 
 ```markdown
-# TODO: [Feature Name]
-
-> Tracks implementation. See plan.md for architecture context.
-
-## Milestone 1: [Name — matches Phase from plan.md]
-
-- [ ] Task 1.1: [clear, actionable description] `[refs: AD-1]`
-  - [ ] [subtask — single concrete action]
-  - [ ] [subtask]
-  - [ ] Verify: [how to confirm this task is done — test, manual check, or other]
-- [ ] Task 1.2: [description] `[refs: AD-2]`
-  - [ ] [subtask]
-  - [ ] [subtask]
-  - [ ] Verify: [verification criteria]
-
-## Milestone 2: [Name]
-
-- [ ] Task 2.1: [description]
-  - [ ] [subtask]
-  - [ ] [subtask]
-  - [ ] Verify: [verification criteria]
-
-## Hardening & Launch
-
-- [ ] Final regression sweep
-  - [ ] Critical path test pass
-  - [ ] Performance/security checks
-- [ ] Documentation updates
-- [ ] Rollout/rollback readiness
-
-## Verification
-
-- [ ] All tests pass
-- [ ] Conformance criteria from plan.md satisfied
-- [ ] Manual smoke test of [key user flow]
+## Codex Audit Summary
+- **Auditor:** Codex | Claude-led; Codex partial: <n> items | Claude-only; Codex unavailable: <status>
+- **Checklist:** 18/18 answered: [P] PASS, [F] FAIL, [N] N-A
+- **FAIL items:** [X] fixed, [Z] rejected (ID + one-line reason each)
+- **lint-plan.py:** clean
 ```
 
-**Phase B — Codex Audits:**
+Extra rule for good findings: the Codex Audit Summary must reflect the real audit
+outcome from Step 7, including why rejected findings were rejected, and must never
+say "Codex" when the fallback did the audit.
 
-```bash
-codex -a never exec "You are auditing a todo.md implementation checklist. Review against these criteria and report ALL failures:
+### Step 9 — Plan Checkpoint includes the audit
 
-TASK QUALITY:
-- [ ] Every task is atomic (produces a single testable artifact)
-- [ ] Every task has a Verify subtask with concrete verification criteria
-- [ ] No task has more than 5 subtasks (split if so)
-- [ ] No 'refactor' tasks without specifying what changes and why
-- [ ] Subtasks are single actions: 'create file X', 'add method Y', 'write test for Z'
+Add one bullet to the checkpoint plan file's contents:
+- **Codex audit summary** — key findings from the adversarial review and how they were
+  resolved
 
-TRACEABILITY:
-- [ ] Every task references an AD-ID from plan.md
-- [ ] Milestones match phases from plan.md Strategy section
-- [ ] Task ordering respects dependency chains
+### Step 10 — NEXT_SESSION_PROMPT.md deltas
 
-COMPLETENESS:
-- [ ] Has Hardening & Launch section
-- [ ] Has Verification section referencing conformance criteria
-- [ ] Covers all phases from plan.md Strategy
-- [ ] No gaps between plan.md scope and todo.md coverage
+Use spec-first's template with these modifications:
 
-TODO:
-$(cat .workspace/features/<feature-name>/todo.md)
+1. The intro names the workflow: "planned via the spec-first-cc-cc workflow".
+2. In Step 1's reading list, annotate plan.md and todo.md with
+   `(audited against the 18-item plan checklist; see findings.md for who audited)`, and findings.md with
+   `(… Codex audit outcomes)`.
+3. Step 3 (Context summary) adds:
+   ```
+   - **Plan audit:** <auditor label>, 18/18 answered, [F] FAIL ([X] fixed, [Z] rejected)
+   ```
+4. The per-milestone gate's verbatim dispatch quote starts with
+   "This is a spec-first-cc-cc milestone gate. …" (instead of "spec-first") — the
+   override contract is otherwise identical.
 
-Report each failure with: task/section, issue, suggested fix."
-```
+### Implementation phase — milestone gate modes
 
-**Phase C — Claude Revises:**
+The per-milestone `/review-changes --light --fix` gate and the final FULL review run
+exactly as `spec-first` defines them (including the ALL-severity override and the
+verify-before-fix semantics of the final review). This delta only makes the two
+operating modes explicit:
 
-Incorporate valid audit findings. Same rules as plan.md revision.
+**Default (autonomous) mode:**
+1. Complete all tasks in the milestone.
+2. Invoke `/review-changes --light --fix`. Dispatch the single Agent tool subagent with
+   the **explicit override**: tell it to fix findings of **ALL severities** (CRITICAL,
+   HIGH, MEDIUM, LOW), not just the default CRITICAL/HIGH, using the verbatim
+   "spec-first-cc-cc milestone gate" quote from the Step 10 delta.
+3. The subagent produces a light report, applies all-severity fixes, and commits them
+   grouped by category.
+4. Relay the subagent's summary (findings found, findings fixed, skipped items with
+   reasons, commit SHAs) to the user.
+5. Commit any remaining milestone work the subagent did not cover.
+6. Proceed to the next milestone.
 
-**Rules for good tasks:**
+**Manual mode** (only if the user explicitly opts out of autonomous fixing):
+1. Complete all tasks in the milestone.
+2. Invoke `/review-changes --light` (NO `--fix`). The subagent returns the light report
+   only.
+3. Present findings to the user and wait for direction.
+4. Fix as directed. Commit when the user approves.
+5. Proceed to the next milestone.
 
-- Each task produces a testable artifact (a function, endpoint, component)
-- Subtasks are single actions: "create file X", "add method Y", "write test for Z"
-- Every task includes a **Verify** subtask with verification criteria
-- Include appropriate verification per task (unit test, integration test, manual check,
-  or other validation — not everything requires a unit test)
-- If a task has more than 5 subtasks, split it into multiple tasks
-- Never write "refactor" without specifying what changes and why
-- Reference AD-IDs from plan.md so decisions are traceable to tasks
+The same mode split applies to the final FULL review: autonomous mode uses
+`/review-changes --fix` on the verified-real CRITICAL/HIGH/MEDIUM findings and presents
+a fixed-real vs rejected-as-false-positive summary; manual mode presents the findings
+(including the false-positive verification notes) and waits.
 
-### Step 8: Plan Checkpoint
+### Output Format delta
 
-After generating plan.md and todo.md, create a plan checkpoint so the user can optionally
-clear context before implementation.
-
-**What to do:**
-
-1. **Enter plan mode** — Use the `EnterPlanMode` tool to signal the start of a plan checkpoint.
-
-2. **Write the plan file** — Include:
-   - **Feature request summary** (from Step 1)
-   - **Paths to generated artifacts** — full paths to plan.md and todo.md
-   - **Key architecture decisions** — summary of AD-IDs and their chosen approaches (from Steps 5-6)
-   - **Resolved vs. open questions** — which Critical/Important unknowns were answered and which remain
-   - **Top risks** — from the Risks & Mitigations table
-   - **Three-Tier Boundaries** — Always/Ask First/Never rules (needed for every implementation task)
-   - **Commands** — build, test, lint, dev server (needed for agent self-verification)
-   - **Codex audit summary** — key findings from the adversarial review and how they were resolved
-   - **Approval status** — whether the user has approved the plan (pending/approved). After
-     `/clear`, this prevents accidental implementation without explicit approval
-
-   The plan file must give enough context that a fresh session can read plan.md, todo.md,
-   and the plan file to begin implementation without any prior conversation history.
-
-3. **Exit plan mode** — Use the `ExitPlanMode` tool to signal the plan is ready for review.
-
-4. **Suggest adversarial validation** — Consider running `/stress-test` to adversarially
-   validate this plan before implementation. This is optional but recommended for plans
-   with unverified assumptions, external dependencies, or performance claims.
-
-5. **Inform the user** — This is the ideal point to `/clear` context before starting
-   implementation. After clearing, the implementation session should read the plan file
-   first, then follow the "Using the Spec During Implementation" guidance below.
-
-**This is a checkpoint, not a gate.** Users who do not want to clear context can proceed
-directly to implementation approval without interruption.
-
----
-
-## Output Format
-
-When this skill completes, show:
+Before spec-first's artifact summary, print the audit header:
 
 ```
 SPEC-FIRST CC-CC — DUAL ENGINE PLANNING (Draft/Audit)
 
-  CODEX AUDIT RESULTS:
-  plan.md:  {N} findings ({X} fixed, {Y} accepted, {Z} rejected)
-  todo.md:  {N} findings ({X} fixed, {Y} accepted, {Z} rejected)
-
-  ARTIFACTS:
-  - plan.md  ({path})
-  - todo.md  ({path})
+  PLAN AUDIT ({auditor label}):
+  checklist: 18/18 answered, {F} FAIL ({X} fixed, {Z} rejected)
+  lint-plan.py: clean
 
   CONFIDENCE: {high/medium/low}
 ```
 
----
+Then the artifact list and the highlighted "NEXT SESSION PROMPT" block, exactly
+as spec-first specifies (the highlighted block stays the last visible element).
 
-## After Generating
+### After Generating delta
 
-Present both files with a brief summary of:
+When presenting the artifacts, also summarize the Codex audit findings and how they
+were resolved.
 
-- Key architecture decisions and their rationale
-- Codex audit findings and how they were resolved
-- Top risks identified
-- Open questions that need human input
+## Codex Fallback
 
-Then wait. Do not proceed to implementation until the user explicitly approves the plan
-or says to start coding. Remind the user that this is the ideal moment to `/clear` context
-if the conversation has grown long — the plan checkpoint from Step 8 ensures all context
-is preserved in the plan file, plan.md, and todo.md.
+Follow `${CLAUDE_PLUGIN_ROOT}/scripts/codex/README.md` (the routing table is repeated in
+`references/codex-audit.md`):
 
-**Living artifacts:** plan.md and todo.md are not frozen after creation. Update them
-when discoveries emerge during implementation. If a decision changes or a risk
-materializes, revise the relevant section and note the change date. For major rewrites,
-ask the user whether to version the old file (e.g., plan-v1.md) before overwriting.
+- Unavailable Codex (preflight says `not-installed` or a cached `quota`; classify says
+  `quota`, `capacity`, `auth`, `timeout` or `failed`; or the answer is `invalid-output`):
+  the **`codex-fallback-auditor` subagent** (`${CLAUDE_PLUGIN_ROOT}/agents/codex-fallback-auditor.md`)
+  answers the full 18-item checklist in the same per-ID format. When installed as a plugin
+  the type is namespaced `keel-skills:codex-fallback-auditor`; if neither name is available,
+  use `general-purpose` with the same checklist.
+- Partial Codex answer: keep Codex's valid lines; the fallback answers only the missing IDs.
+- One Codex attempt per audit. Never retry, never wait for a quota reset, never block the
+  plan because Codex was unavailable.
+- Label honestly: "Claude-Drafter" / "Claude-Auditor" when no usable Codex output exists,
+  "Claude-led; Codex partial" when it was partial.
 
-## Using the Spec During Implementation
-
-This section is guidance for the **implementation phase after this skill completes**.
-The spec-first-cc-cc skill itself only produces plan.md and todo.md — it does not write code.
-
-**If context was cleared:** Start by reading the plan file from Step 8 to recover artifact
-paths and key decisions, then read plan.md and todo.md before beginning any task.
-
-Beware the "curse of instructions" — research shows model adherence drops as the number
-of simultaneous requirements grows. Do not dump the entire plan.md into a single
-implementation prompt.
-
-When implementing tasks from todo.md:
-
-- Feed only the **relevant plan.md section(s)** + the **specific task and its subtasks**
-- Each task prompt should be self-contained with just enough context to execute
-- Always include **Three-Tier Boundaries** — those apply to every task
-- Always include **Commands** — so the agent can verify its own work
-- Reference applicable **Conformance Criteria** for the current task
-
-### MANDATORY: Keep todo.md Updated During Implementation
-
-**As you complete each task, update todo.md immediately** — check off completed items
-(`- [x]`), add notes about deviations, and append new tasks discovered during implementation.
-The todo.md is a living document, not a frozen artifact. If a task was harder than expected,
-split it. If review found new issues, add them. Never leave the todo.md stale — it should
-always reflect the current state of progress so that any session (current or future) can
-read it and know exactly where things stand.
-
-## Anti-Patterns
-
-Mistakes that undermine this approach — avoid these:
+## Additional Anti-Patterns (on top of spec-first's)
 
 1. **Co-generating instead of draft/audit** — Never have both engines generate plans
    independently and merge. Merging destroys internal coherence. One engine drafts,
    the other audits.
-2. **Vague specs** — "Build something nice" is not a spec. Every section needs concrete,
-   falsifiable statements.
-3. **Monolithic prompts** — Dumping the entire spec into one implementation prompt
-   overwhelms the model and degrades output quality.
-4. **Skipping human review** — Never start coding from a plan the user hasn't approved.
-   The plan exists to build shared understanding.
-5. **Missing boundaries** — A plan without Never/Always rules leaves agents guessing
-   what's safe. Make constraints explicit.
-6. **Over-specifying implementation** — The spec defines WHAT and WHY, not HOW. Leave
-   implementation details to the coding phase unless architecturally significant.
-7. **Ignoring existing patterns** — Always check what conventions the codebase already
-   follows. Proposing new patterns when working ones exist creates inconsistency.
-8. **Skipping the plan checkpoint** — Always create the checkpoint (Step 8).
-   The `/clear` afterward is optional, but creating the checkpoint is not.
-9. **Replacing three-experts with dual-engine** — Architecture decisions need
+2. **Replacing three-experts with dual-engine** — Architecture decisions need
    role-differentiated adversarial deliberation, not two generic engines producing
    parallel proposals. Never skip three-experts for architecture.
-10. **Auto-accepting all audit findings** — Review each Codex finding critically.
-    Some will be false positives. The goal is to catch blind spots, not to blindly
-    incorporate every suggestion.
-
-## Codex Fallback
-
-If Codex CLI is unavailable or errors out:
-
-- Fall back to running a **second Claude subagent** as the auditor instead.
-- Label outputs as "Claude-Drafter" and "Claude-Auditor" instead of "Claude" and "Codex".
-- The auditor subagent must receive the same checklist prompts — do not weaken the audit.
-- The rest of the workflow remains identical.
+3. **Auto-accepting all audit findings** — Review each Codex finding critically. Some
+   will be false positives. The goal is to catch blind spots, not to blindly
+   incorporate every suggestion.
+4. **Auditing findings.md or the design gate** — the draft/audit loop applies ONLY to
+   plan.md and todo.md (one audit over both). Adding audit phases elsewhere burns time
+   without value.
+5. **Rewriting the audited artifact in full during Phase C**: apply findings with `Edit`.
+   A regenerated file is a new draft that nobody audited.
+6. **Asking the LLM to check the template** — section presence, AD fields and AD-ID order
+   are `lint-plan.py`'s job. The Codex checklist is for what a script cannot judge.
 
 ## Context Management
 
 This skill follows the context-management protocol.
 
 - **Scratchpad:** `.workspace/ctx/spec-first-cc-cc/`
-- **Checkpoint frequency:** After Steps 2 (research), 5 (three-experts), 6 (plan.md), 7 (todo.md)
-- **Subagent delegation:** Parallel research threads (Step 2), three-experts deliberation (Step 5), Codex audit (Steps 6-7)
+- **Checkpoint frequency:** After Steps 0 (brainstorm, if run), 2 (research),
+  5 (three-experts), 6 (plan.md), 7 (todo.md + audit), 8 (findings.md)
+- **Subagent delegation:** Parallel research threads (Step 2), three-experts
+  deliberation (Step 5), Codex audit (Step 7)
 
-## Quality Checklist
+## Additional Quality Checklist Items (on top of spec-first's)
 
-Before delivering plan.md and todo.md, verify:
-
-- [ ] Research used Glob, Grep, Read to gather real evidence (not guesses)
-- [ ] Every unknown classified as Critical / Important / Nice-to-have
-- [ ] Three Experts reasoning documented with file path citations
-- [ ] Safety/correctness constraints prioritized over convenience in decisions
-- [ ] plan.md has all sections: Summary, Commands, Architecture, Dependencies, NFRs,
-      Boundaries, Risks, Strategy, Open Questions, Conformance
-- [ ] Architecture decisions have AD-IDs and todo.md tasks reference them
-- [ ] todo.md has milestones, tasks with Verify criteria, Hardening, Verification
-- [ ] Three-Tier Boundaries populated with project-specific rules
-- [ ] Conformance criteria are testable assertions, not vague goals
-- [ ] Checked for existing plan.md/todo.md before writing
-- [ ] Codex audit completed for both plan.md and todo.md
-- [ ] All valid audit findings incorporated into final artifacts
-- [ ] Plan presented for user approval before any implementation
-- [ ] Plan checkpoint written via EnterPlanMode/ExitPlanMode with artifact paths and key context
-- [ ] No implementation code was written — only plan.md and todo.md
+- [ ] `lint-plan.py` clean on the final plan.md and todo.md
+- [ ] One plan+todo audit ran (hardened invocation from `references/codex-audit.md`);
+      the merged checklist has 18/18 IDs answered (fallback auditor for anything Codex
+      did not answer)
+- [ ] Every FAIL fixed with targeted edits or rejected with a one-line reason
+- [ ] findings.md includes the Codex Audit Summary section with real outcomes
+- [ ] NEXT_SESSION_PROMPT.md includes the Codex audit results and uses the
+      "spec-first-cc-cc milestone gate" dispatch quote
+- [ ] Output started with the PLAN AUDIT header and ended with the highlighted
+      "NEXT SESSION PROMPT" block
+- [ ] `/tmp/spec-audit-*` temp files cleaned up after each audit's Phase C

@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"t1"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Reading files first."}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"cat x","aggregated_output":"You've hit your usage limit (this is file content, not an error)","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"P01 | PASS | CRIT | plan.md:12 | - | -"}}
+{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}

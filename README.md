@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/skills-24-blue?style=for-the-badge" alt="24 skills" />
+  <img src="https://img.shields.io/badge/skills-27-blue?style=for-the-badge" alt="27 skills" />
   <img src="https://img.shields.io/badge/Claude_Code-plugin-blueviolet?style=for-the-badge" alt="Claude Code plugin" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License" />
   <img src="https://img.shields.io/github/stars/jAgusGelos/keel-skills?style=for-the-badge" alt="Stars" />
@@ -7,7 +7,7 @@
 
 # keel-skills
 
-**The most comprehensive Claude Code skill library for software engineering.** 24 production-grade skills that turn Claude into a senior engineering team — planning features before writing code, reviewing every diff against a 26-point checklist, resolving PR comments autonomously, and shipping with confidence.
+**The most comprehensive Claude Code skill library for software engineering.** 27 production-grade skills that turn Claude into a senior engineering team — planning features before writing code, reviewing every diff against a 26-point checklist, resolving PR comments autonomously, and shipping with confidence.
 
 Built by [Keel AI](https://github.com/jAgusGelos) from hundreds of hours of real-world usage across startups and engineering teams.
 
@@ -31,7 +31,7 @@ Claude Code is powerful out of the box. But without structured workflows, you ge
 # Add the marketplace
 claude plugin marketplace add jAgusGelos/keel-skills
 
-# Install all 24 skills in one command
+# Install all 27 skills in one command
 claude plugin install keel-skills
 ```
 
@@ -76,12 +76,13 @@ Every stage is covered. Skills invoke each other automatically — `spec-first` 
 </details>
 
 <details>
-<summary><b>Development (12 skills)</b> — Build with confidence</summary>
+<summary><b>Development (13 skills)</b> — Build with confidence</summary>
 
 | Skill | What it does |
 |---|---|
 | `spec-first` | Full planning workflow: research, gap analysis, architecture decisions, plan.md + todo.md |
-| `spec-first-cc-cc` | Same pipeline but every step cross-validated by Claude + Codex |
+| `spec-first-cc-cc` | Same pipeline, with an adversarial Codex audit of plan.md and todo.md |
+| `design-alternatives` | Design gate: 2-4 visual directions in one HTML file, picked before any UI code is written |
 | `cc-cc-powerful-iterations` | Dual-engine iteration combining Claude Code with OpenAI Codex CLI |
 | `stress-test` | Adversarially validates your plan against real docs and POC code before you build |
 | `tdd` | Strict red-green-refactor cycles — writes the test first, always |
@@ -199,7 +200,21 @@ depends: [observability-audit, feature-context]
 ---
 ```
 
-All 24 skills ship as a single monolith plugin. This is intentional — Claude Code has no inter-plugin dependency resolution, and our workflow chains go up to 7 skills deep. Partial installs would silently degrade cross-invocation chains.
+All 27 skills ship as a single monolith plugin. This is intentional — Claude Code has no inter-plugin dependency resolution, and our workflow chains go up to 7 skills deep. Partial installs would silently degrade cross-invocation chains.
+
+### Bundled agents and scripts
+
+The plugin also ships what the skills dispatch to, so they work the same on any machine:
+
+| Path | What it is |
+|---|---|
+| `agents/reviewer.md` | Reviewer subagent for `review-changes` (light milestone gate and full-mode agents) |
+| `agents/expert.md` | One persistent expert of a `three-experts` deliberation |
+| `agents/explorer.md` | Read-only research thread for `spec-first` and `three-experts` |
+| `agents/codex-fallback-auditor.md` | Claude auditor that answers a Codex checklist when Codex is unavailable |
+| `scripts/codex/` | Codex helpers (stdlib Python): availability preflight and failure classification, checklist parsing, review evidence. Tests: `python3 -m unittest discover -s scripts/codex/tests` |
+
+Installed as a plugin, the agents are namespaced (`keel-skills:reviewer`). Every skill falls back to a `general-purpose` subagent when the named agent is missing.
 
 ---
 

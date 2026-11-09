@@ -11,7 +11,7 @@ description: |
   "backend audit", or wants a comprehensive performance investigation of their backend code.
   Also trigger when the user mentions "EXPLAIN ANALYZE", "query plan", "slow endpoint", "timeout",
   "pool exhaustion", "memory leak server", "event loop lag", or "transaction deadlock".
-version: 1.0.0
+version: 1.1.0
 category: development
 depends: []
 ---
@@ -94,6 +94,20 @@ Before dispatching agents, understand the project:
    - `src/middleware/` → middleware chain
    - `src/jobs/` or `src/workers/` or `src/queues/` → background processing
 
+5. **Detect infra flags** that change which checks apply:
+   - **Read replicas configured?** Check connection strings for `?replica=`, `readOnly=true`,
+     Prisma `replicas` field, TypeORM `slaves`, Supabase/Neon read-replica endpoints,
+     AWS RDS reader endpoint. If present, Agent 4 must verify read-only queries route there.
+   - **Serverless platform?** Detect AWS Lambda (`serverless.yml`, `sam.yaml`), Vercel
+     Functions (`api/` under Next.js with edge/node runtime), Cloudflare Workers
+     (`wrangler.toml`), Netlify Functions, Supabase Edge Functions. If serverless, Agent 3
+     must check cold-start mitigations and Agent 4 must check for an external connection
+     pooler (PgBouncer, Supabase pooler, Neon pooler).
+   - **`statement_timeout` configured?** Check `postgresql.conf`, DB URL parameters
+     (`?options=-c statement_timeout=5000`), application-level query timeout (Prisma
+     `transactionOptions.timeout`, pg `statement_timeout` per connection). Agent 3 flags
+     if absent.
+
 Save all context — every agent receives the same stack profile.
 
 ## Step 1: Parallel Agent Dispatch
@@ -117,7 +131,24 @@ the problem, the fix, and estimated impact at scale.
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (16 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+- Each numbered check in your list is **exclusive to this agent** — it does not appear
+  in the other four agents' checklists. Stay in your lane. If a finding could plausibly
+  belong to a neighbor agent (e.g., an N+1 is Agent 1's, a missing index is Agent 2's,
+  a sequential `await` is Agent 3's, a pool size is Agent 4's), defer to the neighbor
+  and log it as an out-of-scope observation instead of a full finding.
+
+## Your Investigation Checklist (18 points)
 
 ### N+1 and Query Multiplication
 1. **N+1 query patterns** — The #1 backend performance killer. Look for:
@@ -200,6 +231,30 @@ the problem, the fix, and estimated impact at scale.
     Look for concurrent updates to the same tables from different code paths without
     consistent lock ordering.
 
+### Plan Caching & Bulk Writes
+17. **Prepared statements / query plan caching missed** — Raw SQL built with string
+    concatenation (template literals, `${}`) instead of parameterized/prepared statements
+    prevents the DB from reusing query plans. PostgreSQL's plan cache and extended-protocol
+    reuse typically cut parse/plan CPU by 20-40% on OLTP workloads.
+    - Flag: `pool.query(\`SELECT ... WHERE id = ${id}\`)` (bad — no plan cache, also SQLi)
+    - Good: `pool.query('SELECT ... WHERE id = $1', [id])` (parameterized)
+    - Best for hot queries: `pool.query({ name: 'get-user', text: '...', values: [id] })`
+      (named prepared statement — cached per connection)
+    - ORMs: Prisma and Drizzle do this by default; raw escape hatches (`$queryRaw` with
+      string interpolation, `sql.raw()`) bypass it. Flag raw escape hatches in hot paths.
+
+18. **Bulk write anti-patterns** — Inserting/updating rows one-by-one in a loop instead of
+    batching. For >100 rows the difference is ~100×; for >10k rows it's often the difference
+    between "acceptable" and "never finishes".
+    - Flag: `for (const item of items) await prisma.item.create({ data: item })`
+    - Fix (ORM): `prisma.item.createMany({ data: items })`, Drizzle `.insert().values([...])`,
+      TypeORM `repository.insert(items)` (array), Sequelize `bulkCreate`.
+    - Fix (raw): multi-row `INSERT INTO t (a,b) VALUES (...), (...), (...)` with chunks of
+      500-1000; for >10k rows use PostgreSQL `COPY` (via `pg-copy-streams`) — 10-100× faster
+      than `INSERT`.
+    - Same rule applies to bulk updates (`UPDATE ... FROM (VALUES ...) AS v`) and bulk
+      deletes (`DELETE ... WHERE id = ANY($1::int[])`).
+
 ## Files to Read
 - All files in src/services/, src/repositories/, src/models/
 - API route handlers (src/api/**, app/api/**/route.ts)
@@ -215,6 +270,12 @@ For each finding:
 - **Current Query**: the problematic query or code pattern
 - **Optimized Version**: the fixed query or code with explanation
 - **Estimated Impact**: queries eliminated, response time improvement, or load capacity gain
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -231,7 +292,24 @@ incorrect indexes, type problems, and design issues.
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (14 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+- Each numbered check in your list is **exclusive to this agent** — it does not appear
+  in the other four agents' checklists. Stay in your lane. If a finding could plausibly
+  belong to a neighbor agent (e.g., an N+1 is Agent 1's, a missing index is Agent 2's,
+  a sequential `await` is Agent 3's, a pool size is Agent 4's), defer to the neighbor
+  and log it as an out-of-scope observation instead of a full finding.
+
+## Your Investigation Checklist (16 points)
 
 ### Index Analysis
 1. **Missing indexes on foreign keys** — Every foreign key column MUST have an index.
@@ -275,10 +353,17 @@ incorrect indexes, type problems, and design issues.
    - `CHECK` constraints for valid ranges/enums
    - Foreign key constraints (data integrity + optimizer hints)
 
-9. **Table bloat indicators** — Tables without proper VACUUM strategy, especially:
+9. **Table bloat & autovacuum tuning** — Tables without proper VACUUM strategy, especially:
    - High-write tables with frequent updates/deletes
    - Tables with TOAST'd columns (large text/jsonb)
-   - Check for `autovacuum_vacuum_scale_factor` overrides
+   - Check for `autovacuum_vacuum_scale_factor` overrides — the default 0.2 (vacuum after
+     20% of rows are dead) is far too loose for tables with millions of rows; hot tables
+     should set `autovacuum_vacuum_scale_factor = 0.02` and `autovacuum_vacuum_cost_limit`
+     higher to let autovacuum actually finish
+   - Monitor `n_dead_tup` / `n_live_tup` ratio via `pg_stat_user_tables`; >10% dead tuples
+     on a hot table means autovacuum isn't keeping up
+   - After bulk loads / migrations, run `VACUUM (ANALYZE, VERBOSE)` manually rather than
+     waiting for autovacuum to catch up
 
 10. **Missing partitioning** — Large tables (>10M rows) with time-based queries that
     would benefit from range partitioning. Common candidates:
@@ -307,6 +392,32 @@ incorrect indexes, type problems, and design issues.
     (`COUNT(*) FROM comments WHERE post_id = $1`) instead of maintaining a
     `comments_count` column on the parent table.
 
+### Planner Health & Materialized State
+15. **Stale planner statistics** — The planner picks wrong plans (seq scan instead of index
+    scan, nested loop on huge row counts, etc.) when statistics are outdated or too coarse.
+    Check for:
+    - Autoanalyze disabled or `autovacuum_analyze_scale_factor` too loose for hot tables
+    - `default_statistics_target` at the default 100 when complex filter predicates benefit
+      from 1000+ (set per-column via `ALTER TABLE ... ALTER COLUMN ... SET STATISTICS 1000`)
+    - Correlated columns without extended statistics — e.g., `city` and `zip_code` are
+      correlated, but the planner assumes independence. Fix with
+      `CREATE STATISTICS stats_city_zip (dependencies, ndistinct) ON city, zip_code FROM addresses;`
+      followed by `ANALYZE`.
+    - No `ANALYZE` after large bulk loads / migrations (plans rely on pre-load stats)
+    - Verify in EXPLAIN: "estimated rows" vs "actual rows" off by >10× → statistics are stale
+
+16. **Materialized views without refresh strategy** — MVs created but never scheduled to
+    refresh, or refreshed with a locking `REFRESH MATERIALIZED VIEW` instead of
+    `REFRESH MATERIALIZED VIEW CONCURRENTLY` (blocks reads). Check for:
+    - MV definitions in migrations without a corresponding cron / pg_cron job /
+      application-side scheduler entry
+    - `REFRESH MATERIALIZED VIEW foo` without `CONCURRENTLY` — blocks all `SELECT` on `foo`
+      during the refresh (concurrency requires a unique index on the MV)
+    - Refreshes scheduled tighter than the MV takes to compute (pile-up)
+    - Missing unique index needed for concurrent refresh
+    - Fix: add unique index, use `CONCURRENTLY`, schedule refresh with `pg_cron` or external
+      scheduler at a cadence appropriate to data staleness tolerance.
+
 ## Files to Read
 - prisma/schema.prisma or equivalent ORM schema
 - migrations/ directory (all migration files)
@@ -321,6 +432,12 @@ For each finding:
 - **Problem**: what's wrong and the performance implication
 - **Fix**: exact SQL or schema change
 - **Estimated Impact**: query speed improvement, disk savings, or write overhead trade-off
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -336,7 +453,24 @@ payload problems, missing async patterns, and architecture-level issues.
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (12 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+- Each numbered check in your list is **exclusive to this agent** — it does not appear
+  in the other four agents' checklists. Stay in your lane. If a finding could plausibly
+  belong to a neighbor agent (e.g., an N+1 is Agent 1's, a missing index is Agent 2's,
+  a sequential `await` is Agent 3's, a pool size is Agent 4's), defer to the neighbor
+  and log it as an out-of-scope observation instead of a full finding.
+
+## Your Investigation Checklist (15 points)
 
 ### Endpoint Performance
 1. **Sequential awaits (request waterfalls)** — Multiple independent async operations
@@ -399,6 +533,45 @@ payload problems, missing async patterns, and architecture-level issues.
     exposed in error responses. Both a security AND performance debugging issue
     (noisy logs, no structured error codes for client retry logic).
 
+### Runtime Safety Valves
+13. **Missing DB statement_timeout / transaction timeout** — Queries that can run unbounded
+    hold a connection and worker forever, cascading into pool exhaustion. Different layer
+    than HTTP timeouts (#11 covers external HTTP calls).
+    - PostgreSQL: `SET statement_timeout = '5s'` per session, or
+      `?options=-c statement_timeout=5000` in the connection string, or
+      `statement_timeout = '5s'` in `postgresql.conf`
+    - Prisma: `transactionOptions: { timeout: 5000 }` for `$transaction`; `queryTimeout`
+      is not exposed — set at DB level instead
+    - pg (node-postgres): `statement_timeout` in `Pool` config
+    - Set per-endpoint budget: e.g., 5s for normal endpoints, 30s for report endpoints,
+      never unbounded. Missing timeouts on the hot path is a CRITICAL finding.
+
+14. **No circuit breakers on external calls** — Retry + backoff (#10) alone is not enough.
+    When an upstream is down, every request keeps retrying and holds a DB connection +
+    worker until it gives up, saturating your pool. A circuit breaker trips after N
+    failures and fails fast for a cooldown window, letting the pool recover.
+    - Node: `opossum`, `cockatiel`, `brakes`
+    - Go / polyglot: hystrix-style wrappers, service mesh (Istio, Linkerd) handle this
+    - Flag: any `fetch(externalApi)` / `axios.get(externalApi)` / SDK call on the request
+      path without a breaker wrapper on external dependencies that can reasonably fail.
+    - Bonus: bulkheads (concurrency limits per upstream) to isolate one slow upstream from
+      starving other endpoints.
+
+15. **Serverless cold start — missing mitigations** (only if serverless stack detected in
+    Step 0). Cold starts on Lambda / Vercel Functions / Cloudflare Workers can add 300ms–3s
+    of tail latency. Check:
+    - `new PrismaClient()` / ORM init / DB pool creation inside the handler instead of
+      module scope (re-runs on every cold start — should be cached at module scope and
+      reused across warm invocations)
+    - Bundle size > 5MB (uncompressed) — every cold start pays this as disk I/O + parse.
+      Tree-shake, externalize heavy deps, avoid shipping the full Prisma engine when
+      Data Proxy / Accelerate is available
+    - No provisioned concurrency / keep-warm ping on latency-critical endpoints
+    - Heavy synchronous init (DNS lookups, config fetches, secrets manager calls) in
+      module scope blocking first request
+    - Fix: move eager init to lazy init behind a promise memo, use edge runtime for
+      lightweight endpoints, provisioned concurrency for consistent latency.
+
 ## Files to Read
 - API route handlers (src/api/**, app/api/**/route.ts, src/routes/**)
 - Middleware files (src/middleware/**, middleware.ts)
@@ -413,6 +586,12 @@ For each finding:
 - **Problem**: what's wrong and the latency/throughput impact
 - **Fix**: concrete code change with before/after
 - **Estimated Impact**: ms saved per request, throughput gained, or reliability improvement
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -428,7 +607,24 @@ resource leaks, and infrastructure-level bottlenecks.
 ## Stack Profile
 {STACK_PROFILE}
 
-## Your Investigation Checklist (14 points)
+## Scope Boundary (strict)
+
+Your checklist below is the COMPLETE scope of your investigation. You are one of five
+specialized agents; the other four cover everything else.
+
+- Investigate and report ONLY issues that match your checklist items.
+- If you notice an issue outside your checklist, do NOT investigate it. Add a
+  single-line entry at the end under `## Out-of-scope observations`:
+  `file:line — short description`. No impact rating, no fix, no code block.
+- Depth over breadth — finding every issue in your domain is more valuable than
+  flagging something that belongs to another agent.
+- Each numbered check in your list is **exclusive to this agent** — it does not appear
+  in the other four agents' checklists. Stay in your lane. If a finding could plausibly
+  belong to a neighbor agent (e.g., an N+1 is Agent 1's, a missing index is Agent 2's,
+  a sequential `await` is Agent 3's, a pool size is Agent 4's), defer to the neighbor
+  and log it as an out-of-scope observation instead of a full finding.
+
+## Your Investigation Checklist (16 points)
 
 ### Connection Pooling
 1. **Pool size misconfiguration** — Default pool sizes are often too small or too large.
@@ -498,15 +694,50 @@ resource leaks, and infrastructure-level bottlenecks.
     - Exits cleanly
 
 ### Observability Gaps
-13. **No query logging/monitoring** — No way to identify slow queries in production.
-    Check for:
-    - Prisma: `log: ['query']` or Prisma Optimize
-    - pg: `log_min_duration_statement` in PostgreSQL config
-    - Application-level query timing middleware
+13. **Query logging misconfigured (missing or too verbose)** — Two failure modes:
+    - **Missing:** No way to identify slow queries in production. Check for
+      Prisma `log: ['query']` (dev only) or Prisma Optimize, pg `log_min_duration_statement`
+      in PostgreSQL config, application-level query timing middleware.
+    - **Too verbose in prod:** logging *every* query (Prisma `log: ['query']` active in
+      production, pg `log_min_duration_statement = 0`) has measurable cost — 2-10% CPU
+      overhead on high-QPS services, plus disk I/O on the log target. Sampled or
+      threshold-based logging (`log_min_duration_statement = 500` for >500ms queries)
+      gives you observability without paying for every query. Flag if prod config
+      logs every statement.
 
 14. **Missing health check endpoint** — No endpoint that verifies DB connectivity, Redis
     availability, and service health for load balancers and monitoring.
     - Should check: DB ping, Redis ping, disk space, memory usage
+
+### Concurrency & Replica Topology
+15. **No request coalescing / singleflight on cache misses** — Item #7 (cache stampede)
+    covers the expiry case; this is the adjacent issue: **N concurrent requests for the
+    same key that's missing from cache all hit the origin at the same time**. Common on
+    cold starts, cache evictions, popular uncached items.
+    - Fix: deduplicate in-flight fetches by key. Patterns:
+      - Node: a Map<key, Promise> that the first request populates and later concurrent
+        requests `await`; delete the entry in `.finally()`
+      - Library: `dataloader` (per-request batching + dedup), `async-cache-dedupe`
+      - Redis: `SET NX EX` lock while the first caller rebuilds; others wait briefly and
+        re-read cache
+    - Flag: cache.get → cache.miss → DB.query patterns without dedup wrapping; GraphQL
+      resolvers without dataloader on parent-child fetches (overlaps with Agent 1 #1 but
+      specifically at the cache layer).
+
+16. **Read replicas not leveraged** (only if replicas detected in Step 0). The infra has
+    read replicas but all queries go to the primary, wasting replica capacity and
+    overloading the primary.
+    - Check: does the app split read-only queries to a replica client?
+      - Prisma: `replicas` field in client config (Prisma Accelerate / Read Replicas extension)
+      - Drizzle: separate `drizzle(pool)` instance pointing at replica endpoint
+      - TypeORM: `replication.slaves` array in DataSource config
+      - Raw pg: separate `Pool` instances for primary vs replica, routed per query
+    - Watch out: write-after-read consistency — right after a write, the replica may lag,
+      so `read-your-writes` endpoints should still hit primary. Flag if everything goes to
+      primary OR if writes are followed by replica reads without session stickiness.
+    - Replicas help throughput, not individual query latency — recommend when the primary
+      is the bottleneck (high CPU / connection pressure), not when individual queries are
+      slow (that's an index / query problem, Agents 1-2).
 
 ## Files to Read
 - Database client initialization (src/lib/db.*, src/lib/prisma.*, src/db/*)
@@ -523,6 +754,12 @@ For each finding:
 - **Problem**: what's wrong and the failure mode under load
 - **Fix**: concrete change with before/after
 - **Estimated Impact**: connections saved, cache hit rate, or failure prevention
+
+After the findings, append:
+
+## Out-of-scope observations
+- file:line — short description
+- (or write "None" if no out-of-scope items were noticed)
 ```
 
 ---
@@ -555,7 +792,7 @@ Focus areas:
 
 Stack: <write stack summary here>
 
-Read ORM schema, migration files, API handlers, services, and config files.
+Read package.json, ORM schema, migration files, API handlers, services, and config files.
 For each finding report: Impact (CRITICAL/HIGH/MEDIUM/LOW), File:Line, Problem, Fix, Estimated Impact.
 End with a priority-ranked top 10 list of fixes by expected impact at scale.
 PROMPT_EOF
@@ -577,6 +814,17 @@ Once all 5 agents return:
    - No caching (Agent 4) explains high DB load (Agent 1)
    - Sequential awaits (Agent 3) combined with N+1 (Agent 1) = multiplicative problem
 4. **Unique findings** — Tag with source agent
+5. **Out-of-scope observations** — merge the `Out-of-scope observations` lists
+   from Agents 1, 2, 3, and 4 into a single deduplicated list. For each entry:
+   - If the responsible agent (or Codex) already reported the same `file:line`
+     as a full finding, **drop** the out-of-scope note — the full finding wins.
+   - If no agent caught it as a full finding, keep the note as a hint in the
+     dedicated report section (see Step 3). Do NOT upgrade it to a finding —
+     it was flagged without full investigation.
+
+**Scope discipline note:** Agents 1-4 are strictly bounded to their checklist.
+Agent 5 (Codex) is exempt and retains full cross-validation scope — that's
+what makes `[Confirmed by N/5]` meaningful.
 
 ## Step 3: Impact-Prioritized Report
 
@@ -676,6 +924,17 @@ const orders = await prisma.order.findMany({
 - [ ] Partition large tables
 - [ ] Add materialized views for complex aggregations
 ...
+
+## Out-of-scope Observations
+
+Notes from Agents 1-4 about items outside their assigned checklist. These
+were NOT fully investigated — treat as hints for manual follow-up, not as
+findings. Entries already captured as full findings above have been dropped.
+
+- file:line — short description [noticed by: Query Agent]
+- ...
+
+(or: "None")
 
 ## Cross-Validation Summary
 - {N} findings confirmed by 3+ agents (highest confidence)
