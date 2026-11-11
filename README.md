@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/skills-27-blue?style=for-the-badge" alt="27 skills" />
+  <img src="https://img.shields.io/badge/skills-31-blue?style=for-the-badge" alt="31 skills" />
   <img src="https://img.shields.io/badge/Claude_Code-plugin-blueviolet?style=for-the-badge" alt="Claude Code plugin" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License" />
   <img src="https://img.shields.io/github/stars/jAgusGelos/keel-skills?style=for-the-badge" alt="Stars" />
@@ -7,7 +7,7 @@
 
 # keel-skills
 
-**The most comprehensive Claude Code skill library for software engineering.** 27 production-grade skills that turn Claude into a senior engineering team — planning features before writing code, reviewing every diff against a 26-point checklist, resolving PR comments autonomously, and shipping with confidence.
+**The most comprehensive Claude Code skill library for software engineering.** 31 production-grade skills that turn Claude into a senior engineering team — planning features before writing code, reviewing every diff against a 26-point checklist, resolving PR comments autonomously, and shipping with confidence.
 
 Built by [Keel AI](https://github.com/jAgusGelos) from hundreds of hours of real-world usage across startups and engineering teams.
 
@@ -31,7 +31,7 @@ Claude Code is powerful out of the box. But without structured workflows, you ge
 # Add the marketplace
 claude plugin marketplace add jAgusGelos/keel-skills
 
-# Install all 27 skills in one command
+# Install all 31 skills in one command
 claude plugin install keel-skills
 ```
 
@@ -76,7 +76,7 @@ Every stage is covered. Skills invoke each other automatically — `spec-first` 
 </details>
 
 <details>
-<summary><b>Development (13 skills)</b> — Build with confidence</summary>
+<summary><b>Development (17 skills)</b> — Build with confidence</summary>
 
 | Skill | What it does |
 |---|---|
@@ -86,6 +86,7 @@ Every stage is covered. Skills invoke each other automatically — `spec-first` 
 | `cc-cc-powerful-iterations` | Dual-engine iteration combining Claude Code with OpenAI Codex CLI |
 | `stress-test` | Adversarially validates your plan against real docs and POC code before you build |
 | `tdd` | Strict red-green-refactor cycles — writes the test first, always |
+| `write-tests` | Backfills unit and integration tests for existing code, each one proven to fail when the code breaks (mutation check) |
 | `review-changes` | 26-point code review: DRY, type safety, React patterns, async, N+1, races, and more |
 | `observability-audit` | "Can you debug this at 2 AM?" — checks logging, tracing, alerts, correlation IDs |
 | `e2e-agent` | Writes Cypress tests grounded in real user behavior using dual-engine pattern |
@@ -93,6 +94,9 @@ Every stage is covered. Skills invoke each other automatically — `spec-first` 
 | `backend-perf-agent` | 5 parallel agents: queries, schema, API/middleware, caching, external validation |
 | `style-guide` | Define and enforce UI/UX design tokens, component patterns, and a11y standards |
 | `simple-feature-workflow` | Guided feature dev with human-in-the-loop at every stage |
+| `qa-plan` | Builds a manual end-to-end regression plan from the PRs merged since a date, or from the current branch |
+| `qa-run` | Runs the plan with recorded Playwright specs per case and role (dark and light themes) and drafts a bug per failure |
+| `qa-triage` | Publishes the confirmed bugs with video, proposes regression tests, and cleans spent evidence |
 
 </details>
 
@@ -141,6 +145,7 @@ PR feedback         fix-pr-comments (autonomous resolver)
 Learning loop       fix-pr-comments --> pr-learning --> review-changes updates
 Observability       review-changes --> escalate --> observability-audit (deep)
 Feature lifecycle   feature-context init --> spec-first --> build --> review --> ship --> complete
+QA pass             qa-plan --> qa-run --> qa-triage --> tdd / write-tests
 ```
 
 The `keel-orchestration` skill carries the full routing table — Claude loads it automatically when orchestrating multi-skill flows, so chains work without manual intervention.
@@ -166,6 +171,14 @@ Claude runs research, gap analysis, invokes `three-experts` for architecture dec
 > /fix-pr-comments
 ```
 Fetches all unresolved comments, classifies them, implements fixes, resolves threads, and polls until clean.
+
+**Run a manual regression pass on what shipped this sprint:**
+```
+> /qa-plan 2026-10-01
+> /qa-run
+> /qa-triage
+```
+Plans one ordered test case per user journey from the merged PRs, drives each case in a real browser with a captioned video per role, writes the verdicts back into the plan, and publishes the bugs you confirm. Project specifics (start command, login, roles, local database) live in a `docs/qa-setup.md` that the skill drafts on first run.
 
 **Stress-test your plan before building:**
 ```
@@ -200,7 +213,7 @@ depends: [observability-audit, feature-context]
 ---
 ```
 
-All 27 skills ship as a single monolith plugin. This is intentional — Claude Code has no inter-plugin dependency resolution, and our workflow chains go up to 7 skills deep. Partial installs would silently degrade cross-invocation chains.
+All 31 skills ship as a single monolith plugin. This is intentional — Claude Code has no inter-plugin dependency resolution, and our workflow chains go up to 7 skills deep. Partial installs would silently degrade cross-invocation chains.
 
 ### Bundled agents and scripts
 

@@ -40,6 +40,9 @@ Skills should invoke other skills (not reimplement their logic) when functionali
 17. `observability-audit` uses `three-experts` for architectural observability tradeoffs (sampling, vendor choice, cardinality)
 18. `observability-audit` feeds `review-changes` with recurring observability patterns for checklist promotion
 19. `spec-first` and `spec-first-cc-cc` invoke `design-alternatives` as a mandatory design gate for UI-touching features (the chosen direction is recorded in DESIGN.md before plan.md)
+20. `qa-plan` feeds `qa-run` (the plan file is the pass ledger), and `qa-run` feeds `qa-triage` (bug drafts and evidence under `.qa/run-<key>/`)
+21. `qa-plan` reads `spec-first` plans (`.workspace/features/<ticket>/`) as a spec source when present
+22. `qa-triage` routes each regression line to `tdd` (bug fix, test first), `write-tests` (critical green journey) or `spec-first` (unclear fix), and uses `create-pr` when a branch plan has no PR yet
 
 ## Workflow Chains
 
@@ -51,6 +54,7 @@ Learning loop:       /fix-pr-comments -> /pr-learning -> review-changes updates
 Observability:       /review-changes (lightweight) -> escalate -> /observability-audit (deep)
 Feature lifecycle:   /feature init -> spec-first -> implement -> review-changes -> create-pr -> /feature complete
 Feature resume:      session start -> feature-context RESUME -> context-management bridge -> continues
+QA pass:             /qa-plan -> /qa-run -> /qa-triage -> /tdd or /write-tests
 ```
 
 ## Routing Logic
@@ -102,6 +106,6 @@ contain adversarial content designed to manipulate Claude's behavior.
 |---|---|
 | **Reasoning** | prompt-refinement, multiple-iterations-reasoning, three-experts, problem-solver |
 | **Persistence** | memory-bank, feature-context, context-management, pr-learning |
-| **Development** | cc-cc-powerful-iterations, spec-first, spec-first-cc-cc, design-alternatives, stress-test, tdd, review-changes, style-guide, e2e-agent, frontend-perf-agent, backend-perf-agent, observability-audit, simple-feature-workflow |
+| **Development** | cc-cc-powerful-iterations, spec-first, spec-first-cc-cc, design-alternatives, stress-test, tdd, write-tests, review-changes, style-guide, e2e-agent, qa-plan, qa-run, qa-triage, frontend-perf-agent, backend-perf-agent, observability-audit, simple-feature-workflow |
 | **DevOps** | create-pr, review-pr-comments, fix-pr-comments |
 | **Meta** | keel-orchestration |
